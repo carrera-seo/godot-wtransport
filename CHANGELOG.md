@@ -15,3 +15,5 @@ All notable changes to this project are documented in this file.
 - Debug-only certificate bypass guard and certificate failure matrix.
 - Reproducible desktop builds and packages for macOS universal, Linux x86_64,
   and Windows x86_64, with separate symbols and development servers.
+- Client statistics, session path diagnostics, graceful drain deadlines, and
+  bounded metadata-only trace events.

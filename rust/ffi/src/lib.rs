@@ -7,7 +7,7 @@ use godot_wtransport_core::{CertificateMode, Client, ClientError, ConnectOptions
 use rustls_pki_types::CertificateDer;
 use rustls_pki_types::pem::PemObject;
 
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 #[repr(C)]
 pub struct GwtClient {
@@ -69,6 +69,22 @@ pub struct GwtClientStats {
     pub queued_events: u64,
     pub active_sessions: u64,
     pub active_streams: u64,
+    pub active_draining_sessions: u64,
+    pub datagrams_sent: u64,
+    pub datagrams_received: u64,
+    pub stream_bytes_sent: u64,
+    pub stream_bytes_received: u64,
+    pub connection_failures: u64,
+    pub dropped_trace_events: u64,
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct GwtSessionDiagnostics {
+    pub state: u32,
+    pub stable_id: u64,
+    pub rtt_micros: u64,
+    pub max_datagram_size: u64,
 }
 
 fn status(error: ClientError) -> GwtStatus {
@@ -456,6 +472,89 @@ pub unsafe extern "C" fn gwt_client_close(
 }
 
 #[unsafe(no_mangle)]
+/// Starts graceful draining and closes the session after the deadline.
+///
+/// # Safety
+///
+/// Pointer requirements match [`gwt_client_close`].
+pub unsafe extern "C" fn gwt_client_drain(
+    client: *mut GwtClient,
+    session: u64,
+    timeout_ms: u64,
+    code: u32,
+    reason: *const u8,
+    reason_len: usize,
+) -> GwtStatus {
+    guarded(|| {
+        let (Some(client), Some(reason)) = (unsafe { client_ref(client) }, unsafe {
+            bytes(reason, reason_len)
+        }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        client
+            .client
+            .drain(
+                session,
+                std::time::Duration::from_millis(timeout_ms),
+                code,
+                reason.to_vec(),
+            )
+            .map_or_else(status, |_| GwtStatus::Ok)
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Copies live session path diagnostics.
+///
+/// # Safety
+///
+/// `client` must be live and `out_diagnostics` must be writable.
+pub unsafe extern "C" fn gwt_client_session_diagnostics(
+    client: *mut GwtClient,
+    session: u64,
+    out_diagnostics: *mut GwtSessionDiagnostics,
+) -> GwtStatus {
+    guarded(|| {
+        let (Some(client), Some(out_diagnostics)) = (unsafe { client_ref(client) }, unsafe {
+            out_diagnostics.as_mut()
+        }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        match client.client.session_diagnostics(session) {
+            Ok(diagnostics) => {
+                *out_diagnostics = GwtSessionDiagnostics {
+                    state: diagnostics.state as u32,
+                    stable_id: diagnostics.stable_id,
+                    rtt_micros: diagnostics.rtt_micros,
+                    max_datagram_size: diagnostics.max_datagram_size,
+                };
+                GwtStatus::Ok
+            }
+            Err(error) => status(error),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Enables or disables metadata-only trace events.
+///
+/// # Safety
+///
+/// `client` must be a live pointer returned by `gwt_client_create`.
+pub unsafe extern "C" fn gwt_client_set_trace_enabled(
+    client: *mut GwtClient,
+    enabled: bool,
+) -> GwtStatus {
+    guarded(|| {
+        let Some(client) = (unsafe { client_ref(client) }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        client.client.set_trace_enabled(enabled);
+        GwtStatus::Ok
+    })
+}
+
+#[unsafe(no_mangle)]
 /// Polls one event without blocking.
 ///
 /// # Safety
@@ -502,6 +601,13 @@ pub unsafe extern "C" fn gwt_client_stats(
             queued_events: stats.queued_events,
             active_sessions: stats.active_sessions,
             active_streams: stats.active_streams,
+            active_draining_sessions: stats.active_draining_sessions,
+            datagrams_sent: stats.datagrams_sent,
+            datagrams_received: stats.datagrams_received,
+            stream_bytes_sent: stats.stream_bytes_sent,
+            stream_bytes_received: stats.stream_bytes_received,
+            connection_failures: stats.connection_failures,
+            dropped_trace_events: stats.dropped_trace_events,
         };
         GwtStatus::Ok
     })
@@ -580,6 +686,14 @@ mod tests {
         );
         unsafe { gwt_client_destroy(ptr::null_mut()) };
         unsafe { gwt_event_free(ptr::null_mut()) };
+        assert_eq!(
+            unsafe { gwt_client_set_trace_enabled(ptr::null_mut(), true) } as i32,
+            GwtStatus::InvalidArgument as i32
+        );
+        assert_eq!(
+            unsafe { gwt_client_session_diagnostics(ptr::null_mut(), 1, ptr::null_mut()) } as i32,
+            GwtStatus::InvalidArgument as i32
+        );
     }
 
     #[test]
@@ -609,6 +723,25 @@ mod tests {
         };
 
         assert_eq!(result as i32, GwtStatus::InvalidArgument as i32);
+        unsafe { gwt_client_destroy(client) };
+    }
+
+    #[test]
+    fn diagnostics_and_drain_validate_handles_and_deadlines() {
+        let client = gwt_client_create(8);
+        let mut diagnostics = GwtSessionDiagnostics::default();
+        assert_eq!(
+            unsafe { gwt_client_session_diagnostics(client, 999, &mut diagnostics) } as i32,
+            GwtStatus::InvalidHandle as i32
+        );
+        assert_eq!(
+            unsafe { gwt_client_drain(client, 999, 0, 0, ptr::null(), 0) } as i32,
+            GwtStatus::InvalidArgument as i32
+        );
+        assert_eq!(
+            unsafe { gwt_client_set_trace_enabled(client, true) } as i32,
+            GwtStatus::Ok as i32
+        );
         unsafe { gwt_client_destroy(client) };
     }
 }

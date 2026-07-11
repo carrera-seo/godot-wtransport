@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -26,6 +26,8 @@ pub enum EventKind {
     StreamFinished = 9,
     StreamReset = 10,
     Error = 11,
+    Draining = 12,
+    Trace = 13,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -161,6 +163,29 @@ pub struct ClientStats {
     pub queued_events: u64,
     pub active_sessions: u64,
     pub active_streams: u64,
+    pub active_draining_sessions: u64,
+    pub datagrams_sent: u64,
+    pub datagrams_received: u64,
+    pub stream_bytes_sent: u64,
+    pub stream_bytes_received: u64,
+    pub connection_failures: u64,
+    pub dropped_trace_events: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum SessionState {
+    Connecting = 1,
+    Connected = 2,
+    Draining = 3,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionDiagnostics {
+    pub state: SessionState,
+    pub stable_id: u64,
+    pub rtt_micros: u64,
+    pub max_datagram_size: u64,
 }
 
 #[derive(Debug, Error)]
@@ -180,6 +205,7 @@ struct EventQueue {
     receiver: Mutex<mpsc::Receiver<Event>>,
     queued: AtomicU64,
     dropped_datagrams: AtomicU64,
+    dropped_trace_events: AtomicU64,
 }
 
 impl EventQueue {
@@ -190,6 +216,36 @@ impl EventQueue {
             receiver: Mutex::new(receiver),
             queued: AtomicU64::new(0),
             dropped_datagrams: AtomicU64::new(0),
+            dropped_trace_events: AtomicU64::new(0),
+        }
+    }
+
+    fn send_trace(
+        &self,
+        enabled: bool,
+        name: &'static str,
+        session: SessionHandle,
+        stream: StreamHandle,
+        value: u64,
+    ) {
+        if !enabled {
+            return;
+        }
+        let event = Event {
+            kind: EventKind::Trace,
+            session,
+            stream,
+            code: i64::try_from(value).unwrap_or(i64::MAX),
+            data: name.as_bytes().to_vec(),
+            error: None,
+        };
+        match self.sender.try_send(event) {
+            Ok(()) => {
+                self.queued.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(_) => {
+                self.dropped_trace_events.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 
@@ -221,9 +277,16 @@ impl EventQueue {
 struct Shared {
     events: EventQueue,
     sessions: Mutex<HashMap<SessionHandle, Arc<Connection>>>,
+    session_states: Mutex<HashMap<SessionHandle, SessionState>>,
     send_streams: Mutex<HashMap<StreamHandle, Arc<AsyncMutex<wtransport::SendStream>>>>,
     next_session: AtomicU64,
     next_stream: AtomicU64,
+    trace_enabled: AtomicBool,
+    datagrams_sent: AtomicU64,
+    datagrams_received: AtomicU64,
+    stream_bytes_sent: AtomicU64,
+    stream_bytes_received: AtomicU64,
+    connection_failures: AtomicU64,
 }
 
 impl Shared {
@@ -237,6 +300,24 @@ impl Shared {
 
     fn session(&self, handle: SessionHandle) -> Option<Arc<Connection>> {
         self.sessions.lock().ok()?.get(&handle).cloned()
+    }
+
+    fn state(&self, handle: SessionHandle) -> Option<SessionState> {
+        self.session_states.lock().ok()?.get(&handle).copied()
+    }
+
+    fn is_draining(&self, handle: SessionHandle) -> bool {
+        self.state(handle) == Some(SessionState::Draining)
+    }
+
+    fn trace(&self, name: &'static str, session: SessionHandle, stream: StreamHandle, value: u64) {
+        self.events.send_trace(
+            self.trace_enabled.load(Ordering::Relaxed),
+            name,
+            session,
+            stream,
+            value,
+        );
     }
 }
 
@@ -257,9 +338,16 @@ impl Client {
             shared: Arc::new(Shared {
                 events: EventQueue::new(event_capacity),
                 sessions: Mutex::new(HashMap::new()),
+                session_states: Mutex::new(HashMap::new()),
                 send_streams: Mutex::new(HashMap::new()),
                 next_session: AtomicU64::new(1),
                 next_stream: AtomicU64::new(1),
+                trace_enabled: AtomicBool::new(false),
+                datagrams_sent: AtomicU64::new(0),
+                datagrams_received: AtomicU64::new(0),
+                stream_bytes_sent: AtomicU64::new(0),
+                stream_bytes_received: AtomicU64::new(0),
+                connection_failures: AtomicU64::new(0),
             }),
         })
     }
@@ -277,9 +365,15 @@ impl Client {
         }
         let runtime = self.runtime.as_ref().ok_or(ClientError::ShuttingDown)?;
         let session = self.shared.next_session();
+        if let Ok(mut states) = self.shared.session_states.lock() {
+            states.insert(session, SessionState::Connecting);
+        }
+        self.shared.trace("connect_started", session, 0, 0);
         let shared = Arc::clone(&self.shared);
         runtime.spawn(async move {
             if let Err(error) = connect_task(Arc::clone(&shared), session, url, options).await {
+                shared.connection_failures.fetch_add(1, Ordering::Relaxed);
+                shared.trace("connection_failed", session, 0, 0);
                 shared
                     .events
                     .send_reliable(Event::failure(session, error))
@@ -288,24 +382,37 @@ impl Client {
             if let Ok(mut sessions) = shared.sessions.lock() {
                 sessions.remove(&session);
             }
+            if let Ok(mut states) = shared.session_states.lock() {
+                states.remove(&session);
+            }
         });
         Ok(session)
     }
 
     pub fn send_datagram(&self, session: SessionHandle, data: &[u8]) -> Result<(), ClientError> {
+        if self.shared.is_draining(session) {
+            return Err(ClientError::InvalidSession);
+        }
         let connection = self
             .shared
             .session(session)
             .ok_or(ClientError::InvalidSession)?;
         connection
             .send_datagram(data)
-            .map_err(|error| ClientError::InvalidArgument(error.to_string()))
+            .map_err(|error| ClientError::InvalidArgument(error.to_string()))?;
+        self.shared.datagrams_sent.fetch_add(1, Ordering::Relaxed);
+        self.shared
+            .trace("datagram_sent", session, 0, data.len() as u64);
+        Ok(())
     }
 
     pub fn open_bidirectional_stream(
         &self,
         session: SessionHandle,
     ) -> Result<StreamHandle, ClientError> {
+        if self.shared.is_draining(session) {
+            return Err(ClientError::InvalidSession);
+        }
         let connection = self
             .shared
             .session(session)
@@ -345,6 +452,9 @@ impl Client {
         &self,
         session: SessionHandle,
     ) -> Result<StreamHandle, ClientError> {
+        if self.shared.is_draining(session) {
+            return Err(ClientError::InvalidSession);
+        }
         let connection = self
             .shared
             .session(session)
@@ -389,9 +499,13 @@ impl Client {
             .ok()
             .and_then(|streams| streams.get(&stream).cloned())
             .ok_or(ClientError::InvalidStream)?;
+        let size = data.len() as u64;
         runtime.spawn(async move {
             if let Err(error) = send.lock().await.write_all(&data).await {
                 send_stream_error(&shared, 0, stream, error).await;
+            } else {
+                shared.stream_bytes_sent.fetch_add(size, Ordering::Relaxed);
+                shared.trace("stream_write_completed", 0, stream, size);
             }
         });
         Ok(())
@@ -423,7 +537,84 @@ impl Client {
             .session(session)
             .ok_or(ClientError::InvalidSession)?;
         connection.close(VarInt::from_u32(code), reason);
+        self.shared
+            .trace("session_close_requested", session, 0, code as u64);
         Ok(())
+    }
+
+    pub fn drain(
+        &self,
+        session: SessionHandle,
+        timeout: Duration,
+        code: u32,
+        reason: Vec<u8>,
+    ) -> Result<(), ClientError> {
+        if timeout.is_zero() {
+            return Err(ClientError::InvalidArgument(
+                "drain timeout must be positive".into(),
+            ));
+        }
+        let connection = self
+            .shared
+            .session(session)
+            .ok_or(ClientError::InvalidSession)?;
+        let runtime = self.runtime.as_ref().ok_or(ClientError::ShuttingDown)?;
+        let changed = self
+            .shared
+            .session_states
+            .lock()
+            .map(|mut states| {
+                if states.get(&session) == Some(&SessionState::Connected) {
+                    states.insert(session, SessionState::Draining);
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false);
+        if !changed {
+            return Err(ClientError::InvalidSession);
+        }
+        self.shared
+            .trace("drain_started", session, 0, timeout.as_millis() as u64);
+        let shared = Arc::clone(&self.shared);
+        runtime.spawn(async move {
+            shared
+                .events
+                .send_reliable(Event::simple(EventKind::Draining, session))
+                .await;
+            tokio::time::sleep(timeout).await;
+            connection.close(VarInt::from_u32(code), &reason);
+            shared.trace("drain_deadline_reached", session, 0, code as u64);
+        });
+        Ok(())
+    }
+
+    pub fn set_trace_enabled(&self, enabled: bool) {
+        self.shared.trace_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn session_diagnostics(
+        &self,
+        session: SessionHandle,
+    ) -> Result<SessionDiagnostics, ClientError> {
+        let state = self
+            .shared
+            .state(session)
+            .ok_or(ClientError::InvalidSession)?;
+        let connection = self.shared.session(session);
+        Ok(SessionDiagnostics {
+            state,
+            stable_id: connection
+                .as_ref()
+                .map_or(0, |value| value.stable_id() as u64),
+            rtt_micros: connection
+                .as_ref()
+                .map_or(0, |value| value.rtt().as_micros() as u64),
+            max_datagram_size: connection
+                .and_then(|value| value.max_datagram_size())
+                .unwrap_or(0) as u64,
+        })
     }
 
     pub fn poll(&self) -> Option<Event> {
@@ -446,6 +637,27 @@ impl Client {
                 .lock()
                 .map(|streams| streams.len() as u64)
                 .unwrap_or(0),
+            active_draining_sessions: self
+                .shared
+                .session_states
+                .lock()
+                .map(|states| {
+                    states
+                        .values()
+                        .filter(|state| **state == SessionState::Draining)
+                        .count() as u64
+                })
+                .unwrap_or(0),
+            datagrams_sent: self.shared.datagrams_sent.load(Ordering::Relaxed),
+            datagrams_received: self.shared.datagrams_received.load(Ordering::Relaxed),
+            stream_bytes_sent: self.shared.stream_bytes_sent.load(Ordering::Relaxed),
+            stream_bytes_received: self.shared.stream_bytes_received.load(Ordering::Relaxed),
+            connection_failures: self.shared.connection_failures.load(Ordering::Relaxed),
+            dropped_trace_events: self
+                .shared
+                .events
+                .dropped_trace_events
+                .load(Ordering::Relaxed),
         }
     }
 }
@@ -505,6 +717,12 @@ async fn connect_task(
         .map_err(|_| TransportError::invalid("session lock poisoned"))?
         .insert(session, Arc::clone(&connection));
     shared
+        .session_states
+        .lock()
+        .map_err(|_| TransportError::invalid("session state lock poisoned"))?
+        .insert(session, SessionState::Connected);
+    shared.trace("connected", session, 0, connection.rtt().as_micros() as u64);
+    shared
         .events
         .send_reliable(Event::simple(EventKind::Connected, session))
         .await;
@@ -522,14 +740,18 @@ async fn receive_connection(
     loop {
         tokio::select! {
             datagram = connection.receive_datagram() => match datagram {
-                Ok(data) => shared.events.send_datagram(Event {
-                    kind: EventKind::Datagram,
-                    session,
-                    stream: 0,
-                    code: 0,
-                    data: data.to_vec(),
-                    error: None,
-                }),
+                Ok(data) => {
+                    shared.datagrams_received.fetch_add(1, Ordering::Relaxed);
+                    shared.trace("datagram_received", session, 0, data.len() as u64);
+                    shared.events.send_datagram(Event {
+                        kind: EventKind::Datagram,
+                        session,
+                        stream: 0,
+                        code: 0,
+                        data: data.to_vec(),
+                        error: None,
+                    });
+                },
                 Err(error) => {
                     send_closed(&shared, session, error).await;
                     break;
@@ -590,6 +812,10 @@ fn spawn_receive_stream(
             match recv.read(&mut buffer).await {
                 Ok(Some(size)) => {
                     shared
+                        .stream_bytes_received
+                        .fetch_add(size as u64, Ordering::Relaxed);
+                    shared.trace("stream_data_received", session, stream, size as u64);
+                    shared
                         .events
                         .send_reliable(Event {
                             kind: EventKind::StreamData,
@@ -646,6 +872,7 @@ async fn send_stream_error(
 
 async fn send_closed(shared: &Shared, session: SessionHandle, error: impl std::fmt::Display) {
     let error = TransportError::from_network(error);
+    shared.trace("session_closed", session, 0, 0);
     shared
         .events
         .send_reliable(Event {
@@ -710,5 +937,23 @@ mod tests {
         assert!(queue.poll().is_some());
         blocked.await.unwrap();
         assert_eq!(queue.poll().unwrap().kind, EventKind::Connected);
+    }
+
+    #[test]
+    fn trace_events_are_opt_in_bounded_and_metadata_only() {
+        let queue = EventQueue::new(1);
+        queue.send_trace(false, "disabled", 1, 2, 3);
+        assert!(queue.poll().is_none());
+
+        queue.send_trace(true, "stream_write_completed", 7, 9, 128);
+        queue.send_trace(true, "must_drop", 7, 9, 256);
+        assert_eq!(queue.dropped_trace_events.load(Ordering::Relaxed), 1);
+        let event = queue.poll().unwrap();
+        assert_eq!(event.kind, EventKind::Trace);
+        assert_eq!(event.session, 7);
+        assert_eq!(event.stream, 9);
+        assert_eq!(event.code, 128);
+        assert_eq!(event.data, b"stream_write_completed");
+        assert!(event.error.is_none());
     }
 }

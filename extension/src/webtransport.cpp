@@ -96,7 +96,10 @@ void WebTransportSession::_bind_methods() {
     ClassDB::bind_method(D_METHOD("send_datagram", "data"), &WebTransportSession::send_datagram);
     ClassDB::bind_method(D_METHOD("create_bidirectional_stream"), &WebTransportSession::create_bidirectional_stream);
     ClassDB::bind_method(D_METHOD("create_unidirectional_stream"), &WebTransportSession::create_unidirectional_stream);
+    ClassDB::bind_method(D_METHOD("get_diagnostics"), &WebTransportSession::get_diagnostics);
+    ClassDB::bind_method(D_METHOD("drain", "timeout_ms", "code", "reason"), &WebTransportSession::drain, DEFVAL(0), DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("close", "code", "reason"), &WebTransportSession::close, DEFVAL(0), DEFVAL(String()));
+    ADD_SIGNAL(MethodInfo("draining_started"));
     ADD_SIGNAL(MethodInfo("closed", PropertyInfo(Variant::DICTIONARY, "close_info")));
     ADD_SIGNAL(MethodInfo("datagram_received", PropertyInfo(Variant::PACKED_BYTE_ARRAY, "data")));
     ADD_SIGNAL(MethodInfo("incoming_bidirectional_stream", PropertyInfo(Variant::OBJECT, "stream", PROPERTY_HINT_RESOURCE_TYPE, "WebTransportStream")));
@@ -130,6 +133,26 @@ Ref<WebTransportStream> WebTransportSession::create_unidirectional_stream() {
     return owner->open_unidirectional_stream(handle);
 }
 
+Dictionary WebTransportSession::get_diagnostics() const {
+    WebTransportClient *owner = resolve_client(client_id);
+    ERR_FAIL_NULL_V(owner, Dictionary());
+    return owner->get_session_diagnostics(handle);
+}
+
+Error WebTransportSession::drain(int64_t p_timeout_ms, int64_t p_code, const String &p_reason) {
+    ERR_FAIL_COND_V_MSG(p_timeout_ms <= 0, ERR_INVALID_PARAMETER, "Drain timeout must be positive.");
+    ERR_FAIL_COND_V_MSG(p_code < 0 || p_code > UINT32_MAX, ERR_INVALID_PARAMETER, "Close code must fit in an unsigned 32-bit integer.");
+    WebTransportClient *owner = resolve_client(client_id);
+    ERR_FAIL_NULL_V(owner, ERR_UNCONFIGURED);
+    CharString reason = p_reason.utf8();
+    PackedByteArray bytes;
+    bytes.resize(reason.length());
+    if (reason.length() > 0) {
+        std::memcpy(bytes.ptrw(), reason.get_data(), reason.length());
+    }
+    return owner->drain_session(handle, static_cast<uint64_t>(p_timeout_ms), static_cast<uint32_t>(p_code), bytes);
+}
+
 Error WebTransportSession::close(int64_t p_code, const String &p_reason) {
     ERR_FAIL_COND_V_MSG(p_code < 0 || p_code > UINT32_MAX, ERR_INVALID_PARAMETER, "Close code must fit in an unsigned 32-bit integer.");
     WebTransportClient *owner = resolve_client(client_id);
@@ -161,11 +184,15 @@ WebTransportClient::~WebTransportClient() {
 void WebTransportClient::_bind_methods() {
     ClassDB::bind_method(D_METHOD("connect_to_url", "url", "tls_options"), &WebTransportClient::connect_to_url, DEFVAL(Ref<WebTransportTlsOptions>()));
     ClassDB::bind_method(D_METHOD("get_connection_stats"), &WebTransportClient::get_connection_stats);
+    ClassDB::bind_method(D_METHOD("set_trace_enabled", "enabled"), &WebTransportClient::set_trace_enabled);
+    ClassDB::bind_method(D_METHOD("is_trace_enabled"), &WebTransportClient::is_trace_enabled);
+    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "trace_enabled"), "set_trace_enabled", "is_trace_enabled");
 #ifdef GWT_ENABLE_INSECURE
     ClassDB::bind_method(D_METHOD("connect_insecure_for_testing", "url"), &WebTransportClient::connect_insecure_for_testing);
 #endif
     ADD_SIGNAL(MethodInfo("connection_succeeded", PropertyInfo(Variant::OBJECT, "session", PROPERTY_HINT_RESOURCE_TYPE, "WebTransportSession")));
     ADD_SIGNAL(MethodInfo("connection_failed", PropertyInfo(Variant::DICTIONARY, "error")));
+    ADD_SIGNAL(MethodInfo("trace_event", PropertyInfo(Variant::DICTIONARY, "event")));
 }
 
 PackedByteArray WebTransportClient::copy_bytes(const uint8_t *p_data, size_t p_size) {
@@ -257,6 +284,20 @@ void WebTransportClient::dispatch_event(GwtEvent &p_event) {
         case GWT_EVENT_STREAM_RESET:
             stream_for(p_event.stream, false)->emit_signal("reset", p_event.code);
             break;
+        case GWT_EVENT_DRAINING:
+            if (session.is_valid()) {
+                session->emit_signal("draining_started");
+            }
+            break;
+        case GWT_EVENT_TRACE: {
+            Dictionary trace;
+            trace["name"] = String::utf8(reinterpret_cast<const char *>(p_event.data), static_cast<int64_t>(p_event.data_len));
+            trace["session_handle"] = static_cast<int64_t>(p_event.session);
+            trace["stream_handle"] = static_cast<int64_t>(p_event.stream);
+            trace["value"] = p_event.code;
+            emit_signal("trace_event", trace);
+            break;
+        }
         default:
             UtilityFunctions::push_warning("Unknown WebTransport event kind: ", p_event.kind);
             break;
@@ -348,6 +389,33 @@ Error WebTransportClient::close_session(uint64_t p_session, uint32_t p_code, con
     return gwt_client_close(client, p_session, p_code, p_reason.ptr(), p_reason.size()) == GWT_STATUS_OK ? OK : ERR_CONNECTION_ERROR;
 }
 
+Error WebTransportClient::drain_session(uint64_t p_session, uint64_t p_timeout_ms, uint32_t p_code, const PackedByteArray &p_reason) {
+    return gwt_client_drain(client, p_session, p_timeout_ms, p_code, p_reason.ptr(), p_reason.size()) == GWT_STATUS_OK ? OK : ERR_CONNECTION_ERROR;
+}
+
+Dictionary WebTransportClient::get_session_diagnostics(uint64_t p_session) const {
+    Dictionary result;
+    GwtSessionDiagnostics diagnostics = {};
+    if (client != nullptr && gwt_client_session_diagnostics(client, p_session, &diagnostics) == GWT_STATUS_OK) {
+        result["state"] = static_cast<int64_t>(diagnostics.state);
+        result["stable_id"] = static_cast<int64_t>(diagnostics.stable_id);
+        result["rtt_micros"] = static_cast<int64_t>(diagnostics.rtt_micros);
+        result["max_datagram_size"] = static_cast<int64_t>(diagnostics.max_datagram_size);
+    }
+    return result;
+}
+
+void WebTransportClient::set_trace_enabled(bool p_enabled) {
+    trace_enabled = p_enabled;
+    if (client != nullptr) {
+        gwt_client_set_trace_enabled(client, p_enabled);
+    }
+}
+
+bool WebTransportClient::is_trace_enabled() const {
+    return trace_enabled;
+}
+
 Dictionary WebTransportClient::get_connection_stats() const {
     Dictionary result;
     GwtClientStats stats = {};
@@ -356,6 +424,13 @@ Dictionary WebTransportClient::get_connection_stats() const {
         result["queued_events"] = static_cast<int64_t>(stats.queued_events);
         result["active_sessions"] = static_cast<int64_t>(stats.active_sessions);
         result["active_streams"] = static_cast<int64_t>(stats.active_streams);
+        result["active_draining_sessions"] = static_cast<int64_t>(stats.active_draining_sessions);
+        result["datagrams_sent"] = static_cast<int64_t>(stats.datagrams_sent);
+        result["datagrams_received"] = static_cast<int64_t>(stats.datagrams_received);
+        result["stream_bytes_sent"] = static_cast<int64_t>(stats.stream_bytes_sent);
+        result["stream_bytes_received"] = static_cast<int64_t>(stats.stream_bytes_received);
+        result["connection_failures"] = static_cast<int64_t>(stats.connection_failures);
+        result["dropped_trace_events"] = static_cast<int64_t>(stats.dropped_trace_events);
     }
     return result;
 }

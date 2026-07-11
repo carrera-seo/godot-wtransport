@@ -65,6 +65,8 @@ public:
     Error send_datagram(const PackedByteArray &p_data);
     Ref<WebTransportStream> create_bidirectional_stream();
     Ref<WebTransportStream> create_unidirectional_stream();
+    Dictionary get_diagnostics() const;
+    Error drain(int64_t p_timeout_ms, int64_t p_code = 0, const String &p_reason = String());
     Error close(int64_t p_code = 0, const String &p_reason = String());
 };
 
@@ -97,7 +99,14 @@ public:
     Error write_stream(uint64_t p_stream, const PackedByteArray &p_data);
     Error finish_stream(uint64_t p_stream);
     Error close_session(uint64_t p_session, uint32_t p_code, const PackedByteArray &p_reason);
+    Error drain_session(uint64_t p_session, uint64_t p_timeout_ms, uint32_t p_code, const PackedByteArray &p_reason);
+    Dictionary get_session_diagnostics(uint64_t p_session) const;
+    void set_trace_enabled(bool p_enabled);
+    bool is_trace_enabled() const;
     Dictionary get_connection_stats() const;
+
+private:
+    bool trace_enabled = false;
 };
 
 } // namespace godot

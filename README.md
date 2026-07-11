@@ -71,6 +71,8 @@ Run the headless load test with an explicit writable log path:
 
 TLS configuration and certificate troubleshooting are documented in
 [docs/tls.md](docs/tls.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
+Runtime statistics, graceful draining, and safe tracing are documented in
+[docs/operations.md](docs/operations.md).
 Artifact layout and Asset Library requirements are documented in
 [docs/distribution.md](docs/distribution.md).
 
