@@ -39,6 +39,17 @@ The CI results for the latest `main` commit are available from
    [GitHub Releases page](https://github.com/carrera-seo/godot-wtransport/releases).
    Desktop users can choose the combined `all-desktop` archive. Building from
    source is not required when using these archives.
+
+   | Target | Release archive |
+   | --- | --- |
+   | All desktop platforms | `godot-wtransport-0.1.0-all-desktop.zip` |
+   | macOS universal | `godot-wtransport-0.1.0-macos-universal.zip` |
+   | Linux x86_64 | `godot-wtransport-0.1.0-linux-x86_64.zip` |
+   | Windows x86_64 | `godot-wtransport-0.1.0-windows-x86_64.zip` |
+   | Android arm64 | `godot-wtransport-0.1.0-android-arm64.zip` |
+
+   Each archive has a matching `.sha256` file on the
+   [v0.1.0 release page](https://github.com/carrera-seo/godot-wtransport/releases/tag/v0.1.0).
 2. Extract it at the root of your Godot project. The resulting layout must be:
 
 ```text
