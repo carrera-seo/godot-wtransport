@@ -13,6 +13,15 @@ case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         platform="windows"
         rust_target="x86_64-pc-windows-msvc"
+        if [[ -n "${VCToolsInstallDir:-}" ]]; then
+            msvc_tools="$(cygpath -u "$VCToolsInstallDir")"
+            msvc_linker="$msvc_tools/bin/Hostx64/x64/link.exe"
+            if [[ ! -x "$msvc_linker" ]]; then
+                echo "MSVC linker not found: $msvc_linker" >&2
+                exit 2
+            fi
+            export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER="$msvc_linker"
+        fi
         ;;
     *)
         echo "Unsupported desktop platform" >&2
