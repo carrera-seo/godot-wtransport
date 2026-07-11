@@ -38,6 +38,7 @@ case "$platform" in
 esac
 
 GWT_DEV_SERVER="$server" "$root/scripts/package_release.sh" "$version"
-(cd "$root/dist" && zip -X -r "godot-wtransport-$version-$platform-symbols.zip" "symbols-$platform")
-shasum -a 256 "$root/dist/godot-wtransport-$version-$platform-symbols.zip" > \
-    "$root/dist/godot-wtransport-$version-$platform-symbols.zip.sha256"
+symbol_archive="$root/dist/godot-wtransport-$version-$platform-symbols.zip"
+(cd "$root/dist" && python3 -m zipfile -c "$symbol_archive" "symbols-$platform")
+python3 -c 'import hashlib, pathlib, sys; p=pathlib.Path(sys.argv[1]); print(hashlib.sha256(p.read_bytes()).hexdigest(), "", p.name)' "$symbol_archive" > \
+    "$symbol_archive.sha256"

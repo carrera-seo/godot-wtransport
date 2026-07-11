@@ -18,9 +18,10 @@ libraries using Godot feature tags.
 
 ## Reproducible packaging
 
-`scripts/package_release.sh` uses normalized ZIP metadata (`zip -X`) and emits
-a checksum next to the archive. `scripts/package_desktop_artifacts.sh` extracts
-debug symbols before packaging platform CI artifacts.
+`scripts/package_release.sh` normalizes source timestamps and uses Python's
+standard ZIP implementation on every platform, then emits a SHA-256 checksum
+next to the archive. `scripts/package_desktop_artifacts.sh` extracts debug
+symbols before packaging platform CI artifacts.
 
 ## Godot Asset Library review
 

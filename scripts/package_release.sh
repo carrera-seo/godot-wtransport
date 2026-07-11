@@ -14,8 +14,8 @@ find "$stage" -exec touch -t 198001010000 {} +
 
 archive="$dist/godot-wtransport-$version.zip"
 rm -f "$archive" "$archive.sha256"
-(cd "$stage" && zip -X -r "$archive" addons)
-shasum -a 256 "$archive" > "$archive.sha256"
+(cd "$stage" && python3 -m zipfile -c "$archive" addons)
+python3 -c 'import hashlib, pathlib, sys; p=pathlib.Path(sys.argv[1]); print(hashlib.sha256(p.read_bytes()).hexdigest(), "", p.name)' "$archive" > "$archive.sha256"
 
 server="${GWT_DEV_SERVER:-$root/target/release/godot-wtransport-dev-server}"
 if [[ -f "$server.exe" ]]; then
@@ -25,4 +25,4 @@ if [[ -f "$server" ]]; then
     cp "$server" "$dist/godot-wtransport-dev-server-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)${server##*godot-wtransport-dev-server}"
 fi
 
-unzip -t "$archive"
+python3 -m zipfile -t "$archive"

@@ -64,9 +64,6 @@ jobs:
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libfontconfig1 libx11-6 libxcursor1 libxinerama1 libxrandr2 libxi6 libgl1
-      - name: Install Windows packaging dependencies
-        if: runner.os == 'Windows'
-        run: choco install zip --yes --no-progress
       - name: Check out pinned godot-cpp
         run: git clone --depth 1 https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp fetch --depth 1 origin e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77 && git -C godot-cpp checkout --detach e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77
       - name: Build desktop extension
