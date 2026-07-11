@@ -63,7 +63,7 @@ func _on_datagram_received(data: PackedByteArray) -> void:
         get_tree().quit(6)
         return
     session.close(0, "smoke complete")
-    print("godot-wtransport native round trip passed")
+    print("godot-wtransport %s round trip passed" % ("Web" if OS.has_feature("web") else "native"))
     get_tree().quit(0)
 
 func _parse_hash(value: String) -> PackedByteArray:

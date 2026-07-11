@@ -92,7 +92,9 @@
         void readDatagrams(session, transport);
         void acceptStreams(session, transport.incomingBidirectionalStreams, true);
         void acceptStreams(session, transport.incomingUnidirectionalStreams, false);
-        transport.draining.then(() => emit({ type: "draining", session })).catch(() => {});
+        if (transport.draining && typeof transport.draining.then === "function") {
+          transport.draining.then(() => emit({ type: "draining", session })).catch(() => {});
+        }
         transport.closed.then((info) => {
           emit({ type: "closed", session, code: info.closeCode || 0, reason: info.reason || "" });
           sessions.delete(session);

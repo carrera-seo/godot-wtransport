@@ -59,7 +59,9 @@ and Godot's stable JavaScriptBridge contract.
 
 The Godot 4.6.3 Web export compiles and starts in a Chromium-based browser,
 and capability detection and browser error delivery are exercised locally.
-During the 2026-07-11 local run, Chromium delivered the HTTP/3 CONNECT request
-to the bundled server, but one run remained pending after the server accepted
-the session and reached the demo timeout. Keep browser round-trip validation in
-the interop matrix; an export-only smoke is not evidence of protocol success.
+Chromium-based browser validation covers an HTTP/3 connection and echoed
+datagram against the bundled server. The browser used for the 2026-07-11 run
+did not expose the optional `draining` Promise, so the bridge feature-detects
+that member while retaining session close handling. Keep browser round-trip
+validation in the interop matrix; an export-only smoke is not evidence of
+protocol success.
