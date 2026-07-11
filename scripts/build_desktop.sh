@@ -20,7 +20,12 @@ case "$(uname -s)" in
         ;;
 esac
 
-rustup target add "$rust_target"
+if command -v rustup >/dev/null 2>&1; then
+    rustup target add "$rust_target"
+elif ! rustc -vV | grep -q "host: $rust_target"; then
+    echo "rustup is required to install the non-host target $rust_target" >&2
+    exit 2
+fi
 generator_args=(-G Ninja)
 cmake_source_args=()
 if [[ -n "${GWT_GODOT_CPP_SOURCE:-}" ]]; then

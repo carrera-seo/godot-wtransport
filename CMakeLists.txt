@@ -102,6 +102,10 @@ if(GWT_BUILD_EXTENSION)
             target_compile_options(godot_wtransport PRIVATE
                 -Wno-gnu-anonymous-struct -Wno-nested-anon-types
             )
+        elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(godot_wtransport PRIVATE
+                -Wno-unused-but-set-parameter
+            )
         endif()
     endif()
     if(GWT_ENABLE_INSECURE_TESTING)
