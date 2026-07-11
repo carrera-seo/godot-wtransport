@@ -15,7 +15,16 @@ fn main() -> Result<()> {
 fn check_header() -> Result<()> {
     let header = std::fs::read_to_string(Path::new("rust/ffi/include/godot_wtransport.h"))
         .context("read C ABI header")?;
-    if !header.contains("#define GWT_ABI_VERSION 1u") {
+    let rust = std::fs::read_to_string(Path::new("rust/ffi/src/lib.rs"))
+        .context("read Rust FFI source")?;
+    let version = rust
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("pub const ABI_VERSION: u32 = ")
+                .and_then(|value| value.strip_suffix(';'))
+        })
+        .context("find Rust ABI version")?;
+    if !header.contains(&format!("#define GWT_ABI_VERSION {version}u")) {
         bail!("C header ABI version does not match the Rust ABI version");
     }
     println!("C ABI header is synchronized");

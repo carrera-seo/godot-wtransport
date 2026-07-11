@@ -24,3 +24,5 @@ jobs:
         run: cargo audit --deny warnings
       - name: Check licenses and sources
         run: cargo deny check licenses bans sources
+      - name: Check C ABI header drift
+        run: cargo run --locked -p xtask -- check-header
