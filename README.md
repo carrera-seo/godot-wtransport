@@ -4,6 +4,24 @@
 WebTransport over HTTP/3. The transport core is implemented in Rust and exposed
 through a small, panic-safe C ABI to an official `godot-cpp` adapter.
 
+## WebTransport specification baseline
+
+This extension was implemented and reviewed against the following explicitly
+versioned WebTransport specifications:
+
+- [W3C WebTransport Working Draft, 6 July 2026](https://www.w3.org/TR/2026/WD-webtransport-20260706/)
+  for the client-facing session, datagram, stream, close, draining, and server
+  certificate hash semantics.
+- [IETF WebTransport over HTTP/3, draft-ietf-webtrans-http3-16, 6 July 2026](https://www.ietf.org/archive/id/draft-ietf-webtrans-http3-16.html)
+  for the HTTP/3 protocol mapping, session establishment, bidirectional and
+  unidirectional streams, datagrams, and session termination.
+
+Both documents are works in progress rather than final standards. The pinned
+links above identify the review baseline even when newer drafts are published.
+The implementation also relies on the normative transport specifications
+referenced by the IETF draft, including QUIC v1, HTTP/3, QUIC DATAGRAM, HTTP
+Datagrams, and TLS 1.3.
+
 Prebuilt addon archives target macOS universal, Linux x86_64, and Windows
 x86_64. Building from source requires the tools below.
 
