@@ -93,7 +93,9 @@ if(GWT_BUILD_EXTENSION)
     add_dependencies(godot_wtransport gwt_rust_ffi)
     target_include_directories(godot_wtransport PRIVATE extension/include rust/ffi/include)
     if(MSVC)
-        target_compile_options(godot_wtransport PRIVATE /W4 /WX /wd4100)
+        target_compile_options(godot_wtransport PRIVATE
+            /W4 /WX /wd4100 /external:anglebrackets /external:W0
+        )
     else()
         target_compile_options(godot_wtransport PRIVATE
             -Wall -Wextra -Werror -Wno-unused-parameter
