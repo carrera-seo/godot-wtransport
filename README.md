@@ -43,6 +43,9 @@ cargo test --workspace
 The build pins the official stable `godot-cpp` 4.5 API and tests the resulting
 extension on Godot 4.6.3.
 
+Godot Web export is optional and uses the browser implementation through a
+separate JavaScriptBridge backend. See [docs/web-bridge.md](docs/web-bridge.md).
+
 ```shell
 cmake -S . -B build -DGWT_BUILD_EXTENSION=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel

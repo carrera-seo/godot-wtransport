@@ -9,6 +9,27 @@ permissions:
   contents: read
 
 jobs:
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download Godot and Web export templates
+        run: |
+          curl -L --fail --retry 3 "https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip" -o godot.zip
+          curl -L --fail --retry 3 "https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_export_templates.tpz" -o templates.tpz
+          unzip -q godot.zip -d godot-bin
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.6.3.stable"
+          unzip -q templates.tpz -d templates
+          cp templates/templates/web_* "$HOME/.local/share/godot/export_templates/4.6.3.stable/"
+          chmod +x godot-bin/Godot_v4.6.3-stable_linux.x86_64
+      - name: Smoke test Web export
+        run: ./scripts/smoke_web_export.sh "$PWD/godot-bin/Godot_v4.6.3-stable_linux.x86_64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-wtransport-web-demo
+          path: dist/web
+          if-no-files-found: error
+
   build:
     strategy:
       fail-fast: false
@@ -33,6 +54,8 @@ jobs:
         with:
           toolchain: 1.97.0
           targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu,x86_64-pc-windows-msvc
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libfontconfig1 libx11-6 libxcursor1 libxinerama1 libxrandr2 libxi6 libgl1

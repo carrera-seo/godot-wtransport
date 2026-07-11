@@ -19,3 +19,6 @@ All notable changes to this project are documented in this file.
   bounded metadata-only trace events.
 - Android arm64 build automation, deterministic mobile lifecycle/network-change
   policy, and deferred iOS static-linking and store-privacy preparation.
+- Optional Godot Web JavaScriptBridge backend for datagrams and streams.
+- Web export smoke CI and browser/native API difference documentation.
+- Browser-compatible generated development-certificate validity.

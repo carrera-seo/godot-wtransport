@@ -17,10 +17,12 @@ jobs:
         with:
           toolchain: 1.97.0
           targets: aarch64-linux-android
+      - uses: android-actions/setup-android@v3
       - name: Install build tools and NDK r29
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install "ndk;29.0.14206865"
       - name: Check out pinned godot-cpp
         run: git clone --depth 1 https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp fetch --depth 1 origin e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77 && git -C godot-cpp checkout --detach e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77

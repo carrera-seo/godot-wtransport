@@ -101,7 +101,8 @@ fn generated_identity(args: &Args) -> Result<Identity> {
             .validity_period(now - TimeDuration::days(2), now - TimeDuration::days(1))
             .build()?)
     } else {
-        Ok(builder.from_now_utc().validity_days(14).build()?)
+        // Stay below the browser certificate-hash validity ceiling after timestamp rounding.
+        Ok(builder.from_now_utc().validity_days(13).build()?)
     }
 }
 
