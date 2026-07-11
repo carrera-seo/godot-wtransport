@@ -35,8 +35,10 @@ The CI results for the latest `main` commit are available from
 
 ## Installing the extension
 
-1. Download the addon archive for your platform, or the combined desktop
-   archive, from the project release artifacts.
+1. Download the prebuilt addon archive for your platform from the
+   [GitHub Releases page](https://github.com/carrera-seo/godot-wtransport/releases).
+   Desktop users can choose the combined `all-desktop` archive. Building from
+   source is not required when using these archives.
 2. Extract it at the root of your Godot project. The resulting layout must be:
 
 ```text

@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos
+            asset: macos-universal
+          - os: ubuntu-24.04
+            platform: linux
+            asset: linux-x86_64
+          - os: windows-2025
+            platform: windows
+            asset: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu,x86_64-pc-windows-msvc
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Configure MSVC linker for Cargo
+        if: runner.os == 'Windows'
+        run: |
+          msvc_tools="$(cygpath -u "$VCToolsInstallDir")"
+          echo "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$msvc_tools/bin/Hostx64/x64/link.exe" >> "$GITHUB_ENV"
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Check out pinned godot-cpp
+        run: git clone https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp checkout e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77
+      - name: Build extension
+        env:
+          GWT_GODOT_CPP_SOURCE: ${{ github.workspace }}/godot-cpp
+        run: ./scripts/build_desktop.sh
+      - name: Build development server
+        run: cargo build --release --target ${{ runner.os == 'macOS' && 'aarch64-apple-darwin' || runner.os == 'Windows' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu' }} -p godot-wtransport-dev-server
+      - name: Package release archive
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$version-${{ matrix.asset }}"
+          ./scripts/package_desktop_artifacts.sh "${{ matrix.platform }}" "$package_version"
+          mkdir -p release-assets
+          cp "dist/godot-wtransport-$package_version.zip"* release-assets/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.asset }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
+          targets: aarch64-linux-android
+      - uses: android-actions/setup-android@v3
+      - name: Install build tools and NDK r29
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "ndk;29.0.14206865"
+      - name: Check out pinned godot-cpp
+        run: git clone https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp checkout e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77
+      - name: Build Android arm64 extension
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+          GWT_GODOT_CPP_SOURCE: ${{ github.workspace }}/godot-cpp
+        run: ./scripts/build_android.sh
+      - name: Package release archive
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$version-android-arm64"
+          ./scripts/package_release.sh "$package_version"
+          mkdir -p release-assets
+          cp "dist/godot-wtransport-$package_version.zip"* release-assets/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android-arm64
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    needs: [desktop, android]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create combined desktop archive
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p combined
+          for platform in macos-universal linux-x86_64 windows-x86_64; do
+            unzip -q -o "release-assets/godot-wtransport-$version-$platform.zip" -d combined
+          done
+          find combined -exec touch -t 198001010000 {} +
+          (cd combined && zip -X -r "../release-assets/godot-wtransport-$version-all-desktop.zip" addons)
+          (cd release-assets && sha256sum "godot-wtransport-$version-all-desktop.zip" > "godot-wtransport-$version-all-desktop.zip.sha256")
+          unzip -t "release-assets/godot-wtransport-$version-all-desktop.zip"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --title "godot-wtransport ${GITHUB_REF_NAME#v}" --generate-notes
