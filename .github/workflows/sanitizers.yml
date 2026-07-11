@@ -1,0 +1,35 @@
+name: Sanitizers
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  linux-address-undefined:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
+          targets: x86_64-unknown-linux-gnu
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Check out pinned godot-cpp
+        run: git clone --depth 1 https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp fetch --depth 1 origin e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77 && git -C godot-cpp checkout --detach e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77
+      - name: Build sanitizer extension
+        run: |
+          cmake -S . -B build-sanitizers -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DGWT_BUILD_FFI_HARNESS=OFF \
+            -DGWT_GODOT_CPP_SOURCE="$PWD/godot-cpp" \
+            -DGWT_RUST_TARGET=x86_64-unknown-linux-gnu \
+            -DGWT_OUTPUT_ARCH=x86_64 \
+            -DGWT_ENABLE_SANITIZERS=ON
+          cmake --build build-sanitizers --parallel
+      - name: Run sanitizer C ABI lifecycle smoke
+        run: ./scripts/smoke_sanitizers.sh
