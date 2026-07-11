@@ -164,10 +164,39 @@ be given time to finish. See [docs/api.md](docs/api.md) for the full API and
 
 ## Local development server and TLS
 
-Download or build the development server, then start an echo endpoint:
+### Building the development server
+
+The v0.1.0 release does not include a prebuilt development server. Install the
+stable Rust toolchain, clone this repository, and build the server from source:
 
 ```shell
-./godot-wtransport-dev-server --listen 127.0.0.1:4433
+git clone https://github.com/carrera-seo/godot-wtransport.git
+cd godot-wtransport
+cargo build --locked --release -p godot-wtransport-dev-server
+```
+
+On macOS and Linux, the executable is written to:
+
+```text
+target/release/godot-wtransport-dev-server
+```
+
+On Windows, it is written to:
+
+```text
+target\release\godot-wtransport-dev-server.exe
+```
+
+Start the local echo endpoint from the repository root:
+
+```shell
+./target/release/godot-wtransport-dev-server --listen 127.0.0.1:4433
+```
+
+On Windows PowerShell, run:
+
+```powershell
+.\target\release\godot-wtransport-dev-server.exe --listen 127.0.0.1:4433
 ```
 
 The readiness JSON prints the URL and SHA-256 certificate hash. Development
