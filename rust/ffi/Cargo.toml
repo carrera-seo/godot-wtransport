@@ -1,0 +1,16 @@
+[package]
+name = "godot-wtransport-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "../../LICENSE"
+repository.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+godot-wtransport-core = { path = "../core" }
+
+[dev-dependencies]
+godot-wtransport-core = { path = "../core" }

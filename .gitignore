@@ -1,0 +1,7 @@
+plan/
+target/
+build/
+.DS_Store
+interop/certificates/*.pem
+interop/certificates/*.key
+addons/godot_wtransport/bin/

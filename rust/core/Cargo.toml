@@ -1,0 +1,19 @@
+[package]
+name = "godot-wtransport-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "../../LICENSE"
+repository.workspace = true
+
+[features]
+default = []
+dangerous-insecure = ["wtransport/dangerous-configuration"]
+
+[dependencies]
+thiserror.workspace = true
+tokio.workspace = true
+wtransport.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
