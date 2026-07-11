@@ -7,6 +7,22 @@ through a small, panic-safe C ABI to an official `godot-cpp` adapter.
 Prebuilt addon archives target macOS universal, Linux x86_64, and Windows
 x86_64. Building from source requires the tools below.
 
+## Build and test status
+
+The following status reflects Godot 4.7 validation on 2026-07-11:
+
+| Environment | Build | Godot load | Native stream test | Notes |
+| --- | --- | --- | --- | --- |
+| macOS universal (arm64 and x86_64) | Passed | Passed on arm64 | Passed on arm64 | Universal debug and release libraries |
+| Linux x86_64 | Passed | Passed | Passed | Ubuntu 24.04 CI |
+| Windows x86_64 | Passed | Passed | Passed | Windows Server 2025 CI |
+| Android arm64 | Passed | Not run | Not run | ELF architecture and release-symbol checks passed |
+| Web | Export passed | Export smoke passed | Not applicable | Uses the optional JavaScriptBridge backend |
+| iOS | Not implemented | Not run | Not run | Deferred platform |
+
+The CI results for the latest `main` commit are available from
+[GitHub Actions](https://github.com/carrera-seo/godot-wtransport/actions).
+
 ## Compatibility
 
 - Godot 4.7 stable is the tested runtime and export baseline.
