@@ -22,6 +22,28 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+## Native extension build
+
+The build pins the official stable `godot-cpp` 4.5 API and tests the resulting
+extension on Godot 4.6.3.
+
+```shell
+cmake -S . -B build -DGWT_BUILD_EXTENSION=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+```
+
+For offline or iterative work, pass an existing stable checkout with
+`-DGWT_GODOT_CPP_SOURCE=/path/to/godot-cpp`.
+
+Run the headless load test with an explicit writable log path:
+
+```shell
+/Applications/Godot.app/Contents/MacOS/Godot \
+  --headless --path ./demo \
+  --log-file /private/tmp/godot-wtransport-headless.log \
+  --quit-after 5
+```
+
 ## License
 
 This project uses the [Coffee-ware License](LICENSE). Offering coffee is an

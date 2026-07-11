@@ -1,0 +1,14 @@
+[configuration]
+
+entry_symbol = "godot_wtransport_library_init"
+compatibility_minimum = "4.5"
+reloadable = true
+
+[libraries]
+
+macos.debug = "res://addons/godot_wtransport/bin/libgodot_wtransport.macos.debug.arm64.dylib"
+macos.release = "res://addons/godot_wtransport/bin/libgodot_wtransport.macos.release.arm64.dylib"
+linux.debug.x86_64 = "res://addons/godot_wtransport/bin/libgodot_wtransport.linux.debug.x86_64.so"
+linux.release.x86_64 = "res://addons/godot_wtransport/bin/libgodot_wtransport.linux.release.x86_64.so"
+windows.debug.x86_64 = "res://addons/godot_wtransport/bin/godot_wtransport.windows.debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/godot_wtransport/bin/godot_wtransport.windows.release.x86_64.dll"
