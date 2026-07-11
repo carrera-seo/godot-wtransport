@@ -85,9 +85,13 @@ if(GWT_BUILD_EXTENSION)
         target_compile_options(godot_wtransport PRIVATE /W4 /WX /wd4100)
     else()
         target_compile_options(godot_wtransport PRIVATE
-            -Wall -Wextra -Werror
-            -Wno-unused-parameter -Wno-gnu-anonymous-struct -Wno-nested-anon-types
+            -Wall -Wextra -Werror -Wno-unused-parameter
         )
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(godot_wtransport PRIVATE
+                -Wno-gnu-anonymous-struct -Wno-nested-anon-types
+            )
+        endif()
     endif()
     if(GWT_ENABLE_INSECURE_TESTING)
         target_compile_definitions(godot_wtransport PRIVATE GWT_ENABLE_INSECURE=1)

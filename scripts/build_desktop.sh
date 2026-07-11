@@ -21,6 +21,7 @@ case "$(uname -s)" in
 esac
 
 rustup target add "$rust_target"
+generator_args=(-G Ninja)
 cmake_source_args=()
 if [[ -n "${GWT_GODOT_CPP_SOURCE:-}" ]]; then
     cmake_source_args+=("-DGWT_GODOT_CPP_SOURCE=${GWT_GODOT_CPP_SOURCE}")
@@ -28,6 +29,7 @@ fi
 for flavor in Debug Release; do
     build_dir="$root/build-$platform-$(printf '%s' "$flavor" | tr '[:upper:]' '[:lower:]')"
     cmake -S "$root" -B "$build_dir" \
+        "${generator_args[@]}" \
         -DCMAKE_BUILD_TYPE="$flavor" \
         -DGWT_BUILD_FFI_HARNESS=OFF \
         -DGWT_RUST_TARGET="$rust_target" \
