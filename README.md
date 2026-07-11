@@ -44,6 +44,9 @@ Run the headless load test with an explicit writable log path:
   --quit-after 5
 ```
 
+TLS configuration and certificate troubleshooting are documented in
+[docs/tls.md](docs/tls.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
+
 ## License
 
 This project uses the [Coffee-ware License](LICENSE). Offering coffee is an

@@ -21,6 +21,7 @@ class WebTransportClient;
 class WebTransportTlsOptions : public RefCounted {
     GDCLASS(WebTransportTlsOptions, RefCounted)
     Array server_certificate_hashes;
+    PackedByteArray custom_ca_pem;
 
 protected:
     static void _bind_methods();
@@ -29,6 +30,8 @@ public:
     void set_server_certificate_hashes(const Array &p_hashes);
     Array get_server_certificate_hashes() const;
     void add_server_certificate_hash(const PackedByteArray &p_hash);
+    void set_custom_ca_pem(const PackedByteArray &p_pem);
+    PackedByteArray get_custom_ca_pem() const;
 };
 
 class WebTransportStream : public RefCounted {
@@ -85,6 +88,9 @@ public:
     ~WebTransportClient() override;
     void _process(double p_delta) override;
     int64_t connect_to_url(const String &p_url, const Ref<WebTransportTlsOptions> &p_tls_options = Ref<WebTransportTlsOptions>());
+#ifdef GWT_ENABLE_INSECURE
+    int64_t connect_insecure_for_testing(const String &p_url);
+#endif
     Error send_datagram(uint64_t p_session, const PackedByteArray &p_data);
     Ref<WebTransportStream> open_bidirectional_stream(uint64_t p_session);
     Ref<WebTransportStream> open_unidirectional_stream(uint64_t p_session);

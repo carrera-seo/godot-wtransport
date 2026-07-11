@@ -15,53 +15,93 @@ struct Args {
     key: Option<PathBuf>,
     reject: bool,
     accept_delay: Duration,
+    generated_sans: Vec<String>,
+    expired: bool,
+    write_generated_cert: Option<PathBuf>,
 }
 
 impl Args {
     fn parse() -> Result<Self> {
-        let mut listen = "127.0.0.1:4433".parse()?;
-        let mut cert = None;
-        let mut key = None;
-        let mut reject = false;
-        let mut accept_delay = Duration::ZERO;
+        let mut result = Self {
+            listen: "127.0.0.1:4433".parse()?,
+            cert: None,
+            key: None,
+            reject: false,
+            accept_delay: Duration::ZERO,
+            generated_sans: Vec::new(),
+            expired: false,
+            write_generated_cert: None,
+        };
         let mut args = std::env::args().skip(1);
         while let Some(argument) = args.next() {
             match argument.as_str() {
                 "--listen" => {
-                    listen = args
+                    result.listen = args
                         .next()
                         .context("--listen requires an address")?
                         .parse()?;
                 }
-                "--cert" => cert = Some(args.next().context("--cert requires a path")?.into()),
-                "--key" => key = Some(args.next().context("--key requires a path")?.into()),
-                "--reject" => reject = true,
+                "--cert" => {
+                    result.cert = Some(args.next().context("--cert requires a path")?.into())
+                }
+                "--key" => result.key = Some(args.next().context("--key requires a path")?.into()),
+                "--reject" => result.reject = true,
                 "--accept-delay-ms" => {
-                    accept_delay = Duration::from_millis(
+                    result.accept_delay = Duration::from_millis(
                         args.next()
                             .context("--accept-delay-ms requires a value")?
                             .parse()?,
                     );
                 }
+                "--san" => result
+                    .generated_sans
+                    .push(args.next().context("--san requires a value")?),
+                "--expired" => result.expired = true,
+                "--write-generated-cert" => {
+                    result.write_generated_cert = Some(
+                        args.next()
+                            .context("--write-generated-cert requires a path")?
+                            .into(),
+                    );
+                }
                 "--help" | "-h" => {
                     println!(
-                        "Usage: godot-wtransport-dev-server [--listen IP:PORT] [--cert FILE --key FILE] [--reject] [--accept-delay-ms N]"
+                        "Usage: godot-wtransport-dev-server [--listen IP:PORT] [--cert FILE --key FILE] [--reject] [--accept-delay-ms N] [--san NAME] [--expired] [--write-generated-cert FILE]"
                     );
                     std::process::exit(0);
                 }
                 _ => bail!("unknown argument: {argument}"),
             }
         }
-        if cert.is_some() != key.is_some() {
+        if result.cert.is_some() != result.key.is_some() {
             bail!("--cert and --key must be specified together");
         }
-        Ok(Self {
-            listen,
-            cert,
-            key,
-            reject,
-            accept_delay,
-        })
+        if result.cert.is_some() && (result.expired || !result.generated_sans.is_empty()) {
+            bail!("--expired and --san apply only to generated certificates");
+        }
+        Ok(result)
+    }
+}
+
+fn generated_identity(args: &Args) -> Result<Identity> {
+    let sans = if args.generated_sans.is_empty() {
+        vec![
+            "localhost".to_owned(),
+            "127.0.0.1".to_owned(),
+            "::1".to_owned(),
+        ]
+    } else {
+        args.generated_sans.clone()
+    };
+    let builder = Identity::self_signed_builder().subject_alt_names(sans);
+    if args.expired {
+        use wtransport::tls::self_signed::time::{Duration as TimeDuration, OffsetDateTime};
+        let now = OffsetDateTime::now_utc();
+        Ok(builder
+            .validity_period(now - TimeDuration::days(2), now - TimeDuration::days(1))
+            .build()?)
+    } else {
+        Ok(builder.from_now_utc().validity_days(14).build()?)
     }
 }
 
@@ -77,8 +117,11 @@ async fn main() -> Result<()> {
     let args = Args::parse()?;
     let identity = match (&args.cert, &args.key) {
         (Some(cert), Some(key)) => Identity::load_pemfiles(cert, key).await?,
-        _ => Identity::self_signed(["localhost", "127.0.0.1", "::1"])?,
+        _ => generated_identity(&args)?,
     };
+    if let Some(path) = &args.write_generated_cert {
+        identity.certificate_chain().store_pemfile(path).await?;
+    }
     let certificate_hash = identity.certificate_chain().as_slice()[0].hash();
     let config = ServerConfig::builder()
         .with_bind_address(args.listen)
@@ -146,9 +189,7 @@ async fn handle_session(incoming: IncomingSession, reject: bool, delay: Duration
                 tokio::spawn(async move {
                     loop {
                         match recv.read(&mut buffer).await {
-                            Ok(Some(size)) => {
-                                if send.write_all(&buffer[..size]).await.is_err() { break; }
-                            }
+                            Ok(Some(size)) => if send.write_all(&buffer[..size]).await.is_err() { break; },
                             Ok(None) => { let _ = send.finish().await; break; }
                             Err(_) => break,
                         }
@@ -160,14 +201,12 @@ async fn handle_session(incoming: IncomingSession, reject: bool, delay: Duration
                 let mut recv = stream?;
                 let connection = connection.clone();
                 tokio::spawn(async move {
-                    let mut send = match connection.open_uni().await {
-                        Ok(opening) => match opening.await { Ok(send) => send, Err(_) => return },
-                        Err(_) => return,
-                    };
+                    let Ok(opening) = connection.open_uni().await else { return; };
+                    let Ok(mut send) = opening.await else { return; };
                     let mut local = vec![0_u8; 64 * 1024];
                     loop {
                         match recv.read(&mut local).await {
-                            Ok(Some(size)) => { if send.write_all(&local[..size]).await.is_err() { break; } }
+                            Ok(Some(size)) => if send.write_all(&local[..size]).await.is_err() { break; },
                             Ok(None) => { let _ = send.finish().await; break; }
                             Err(_) => break,
                         }

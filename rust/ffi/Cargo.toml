@@ -5,12 +5,18 @@ edition.workspace = true
 rust-version.workspace = true
 license-file = "../../LICENSE"
 repository.workspace = true
+publish = false
+
+[features]
+default = []
+dangerous-insecure = ["godot-wtransport-core/dangerous-insecure"]
 
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-godot-wtransport-core = { path = "../core" }
+godot-wtransport-core = { version = "0.1.0", path = "../core" }
+rustls-pki-types.workspace = true
 
 [dev-dependencies]
-godot-wtransport-core = { path = "../core" }
+godot-wtransport-core = { version = "0.1.0", path = "../core" }

@@ -18,7 +18,10 @@ void WebTransportTlsOptions::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_server_certificate_hashes", "hashes"), &WebTransportTlsOptions::set_server_certificate_hashes);
     ClassDB::bind_method(D_METHOD("get_server_certificate_hashes"), &WebTransportTlsOptions::get_server_certificate_hashes);
     ClassDB::bind_method(D_METHOD("add_server_certificate_hash", "hash"), &WebTransportTlsOptions::add_server_certificate_hash);
+    ClassDB::bind_method(D_METHOD("set_custom_ca_pem", "pem"), &WebTransportTlsOptions::set_custom_ca_pem);
+    ClassDB::bind_method(D_METHOD("get_custom_ca_pem"), &WebTransportTlsOptions::get_custom_ca_pem);
     ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "server_certificate_hashes", PROPERTY_HINT_ARRAY_TYPE, "PackedByteArray"), "set_server_certificate_hashes", "get_server_certificate_hashes");
+    ADD_PROPERTY(PropertyInfo(Variant::PACKED_BYTE_ARRAY, "custom_ca_pem"), "set_custom_ca_pem", "get_custom_ca_pem");
 }
 
 void WebTransportTlsOptions::set_server_certificate_hashes(const Array &p_hashes) {
@@ -36,6 +39,14 @@ Array WebTransportTlsOptions::get_server_certificate_hashes() const {
 void WebTransportTlsOptions::add_server_certificate_hash(const PackedByteArray &p_hash) {
     ERR_FAIL_COND_MSG(p_hash.size() != 32, "A SHA-256 certificate hash must contain exactly 32 bytes.");
     server_certificate_hashes.push_back(p_hash);
+}
+
+void WebTransportTlsOptions::set_custom_ca_pem(const PackedByteArray &p_pem) {
+    custom_ca_pem = p_pem;
+}
+
+PackedByteArray WebTransportTlsOptions::get_custom_ca_pem() const {
+    return custom_ca_pem;
 }
 
 void WebTransportStream::_bind_methods() {
@@ -150,6 +161,9 @@ WebTransportClient::~WebTransportClient() {
 void WebTransportClient::_bind_methods() {
     ClassDB::bind_method(D_METHOD("connect_to_url", "url", "tls_options"), &WebTransportClient::connect_to_url, DEFVAL(Ref<WebTransportTlsOptions>()));
     ClassDB::bind_method(D_METHOD("get_connection_stats"), &WebTransportClient::get_connection_stats);
+#ifdef GWT_ENABLE_INSECURE
+    ClassDB::bind_method(D_METHOD("connect_insecure_for_testing", "url"), &WebTransportClient::connect_insecure_for_testing);
+#endif
     ADD_SIGNAL(MethodInfo("connection_succeeded", PropertyInfo(Variant::OBJECT, "session", PROPERTY_HINT_RESOURCE_TYPE, "WebTransportSession")));
     ADD_SIGNAL(MethodInfo("connection_failed", PropertyInfo(Variant::DICTIONARY, "error")));
 }
@@ -274,7 +288,10 @@ int64_t WebTransportClient::connect_to_url(const String &p_url, const Ref<WebTra
     CharString url = p_url.utf8();
     uint64_t session = 0;
     GwtStatus status;
-    if (p_tls_options.is_valid() && !p_tls_options->get_server_certificate_hashes().is_empty()) {
+    if (p_tls_options.is_valid() && !p_tls_options->get_custom_ca_pem().is_empty()) {
+        PackedByteArray pem = p_tls_options->get_custom_ca_pem();
+        status = gwt_client_connect_custom_ca_pem(client, url.get_data(), pem.ptr(), pem.size(), &session);
+    } else if (p_tls_options.is_valid() && !p_tls_options->get_server_certificate_hashes().is_empty()) {
         Array hashes = p_tls_options->get_server_certificate_hashes();
         std::vector<uint8_t> raw_hashes;
         raw_hashes.reserve(hashes.size() * 32);
@@ -291,6 +308,17 @@ int64_t WebTransportClient::connect_to_url(const String &p_url, const Ref<WebTra
     session_for(session);
     return static_cast<int64_t>(session);
 }
+
+#ifdef GWT_ENABLE_INSECURE
+int64_t WebTransportClient::connect_insecure_for_testing(const String &p_url) {
+    ERR_FAIL_NULL_V(client, 0);
+    CharString url = p_url.utf8();
+    uint64_t session = 0;
+    ERR_FAIL_COND_V_MSG(gwt_client_connect_insecure_for_testing(client, url.get_data(), &session) != GWT_STATUS_OK, 0, "Failed to queue an insecure WebTransport connection.");
+    session_for(session);
+    return static_cast<int64_t>(session);
+}
+#endif
 
 Error WebTransportClient::send_datagram(uint64_t p_session, const PackedByteArray &p_data) {
     return gwt_client_send_datagram(client, p_session, p_data.ptr(), p_data.size()) == GWT_STATUS_OK ? OK : ERR_CONNECTION_ERROR;

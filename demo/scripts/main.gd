@@ -15,6 +15,9 @@ func _ready() -> void:
         get_tree().quit(0)
         return
     var options := WebTransportTlsOptions.new()
+    var custom_ca_path := OS.get_environment("GWT_TEST_CUSTOM_CA")
+    if not custom_ca_path.is_empty():
+        options.custom_ca_pem = FileAccess.get_file_as_bytes(custom_ca_path)
     var hash_text := OS.get_environment("GWT_TEST_CERTIFICATE_HASH")
     if not hash_text.is_empty():
         options.add_server_certificate_hash(_parse_hash(hash_text))

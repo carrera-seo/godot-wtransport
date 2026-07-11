@@ -306,6 +306,7 @@ name = "godot-wtransport-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "rustls",
  "thiserror",
  "tokio",
  "wtransport",
@@ -329,6 +330,7 @@ name = "godot-wtransport-ffi"
 version = "0.1.0"
 dependencies = [
  "godot-wtransport-core",
+ "rustls-pki-types",
 ]
 
 [[package]]

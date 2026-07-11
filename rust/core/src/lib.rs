@@ -133,6 +133,7 @@ impl Event {
 pub enum CertificateMode {
     NativeRoots,
     ServerCertificateHashes(Vec<[u8; 32]>),
+    CustomCaCertificates(Vec<Vec<u8>>),
     #[cfg(feature = "dangerous-insecure")]
     Insecure,
 }
@@ -474,6 +475,21 @@ async fn connect_task(
         CertificateMode::ServerCertificateHashes(hashes) => builder
             .with_server_certificate_hashes(hashes.into_iter().map(Sha256Digest::new))
             .build(),
+        CertificateMode::CustomCaCertificates(certificates) => {
+            let mut roots = rustls::RootCertStore::empty();
+            for certificate in certificates {
+                roots
+                    .add(rustls::pki_types::CertificateDer::from(certificate))
+                    .map_err(|error| {
+                        TransportError::invalid(format!("invalid custom CA certificate: {error}"))
+                    })?;
+            }
+            if roots.is_empty() {
+                return Err(TransportError::invalid("custom CA list is empty"));
+            }
+            let tls = wtransport::tls::client::build_default_tls_config(Arc::new(roots), None);
+            builder.with_custom_tls(tls).build()
+        }
         #[cfg(feature = "dangerous-insecure")]
         CertificateMode::Insecure => builder.with_no_cert_validation().build(),
     };

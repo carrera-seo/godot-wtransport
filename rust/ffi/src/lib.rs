@@ -4,6 +4,8 @@ use std::ptr;
 use std::slice;
 
 use godot_wtransport_core::{CertificateMode, Client, ClientError, ConnectOptions, Event};
+use rustls_pki_types::CertificateDer;
+use rustls_pki_types::pem::PemObject;
 
 pub const ABI_VERSION: u32 = 1;
 
@@ -201,6 +203,91 @@ pub unsafe extern "C" fn gwt_client_connect_hashes(
             .collect();
         let options = ConnectOptions {
             certificate_mode: CertificateMode::ServerCertificateHashes(parsed),
+            ..ConnectOptions::default()
+        };
+        match client.client.connect(url, options) {
+            Ok(session) => {
+                *out_session = session;
+                GwtStatus::Ok
+            }
+            Err(error) => status(error),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Starts a connection using PEM-encoded custom CA certificates.
+///
+/// # Safety
+///
+/// `ca_pem` must reference `ca_pem_len` readable bytes. Other pointers follow
+/// the requirements of [`gwt_client_connect`].
+pub unsafe extern "C" fn gwt_client_connect_custom_ca_pem(
+    client: *mut GwtClient,
+    url: *const c_char,
+    ca_pem: *const u8,
+    ca_pem_len: usize,
+    out_session: *mut u64,
+) -> GwtStatus {
+    guarded(|| {
+        let Some(client) = (unsafe { client_ref(client) }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let Some(url) = (unsafe { string(url) }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let Some(ca_pem) = (unsafe { bytes(ca_pem, ca_pem_len) }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let Some(out_session) = (unsafe { out_session.as_mut() }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let certificates = match CertificateDer::pem_slice_iter(ca_pem)
+            .map(|item| item.map(|certificate| certificate.to_vec()))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(certificates) if !certificates.is_empty() => certificates,
+            _ => return GwtStatus::InvalidArgument,
+        };
+        let options = ConnectOptions {
+            certificate_mode: CertificateMode::CustomCaCertificates(certificates),
+            ..ConnectOptions::default()
+        };
+        match client.client.connect(url, options) {
+            Ok(session) => {
+                *out_session = session;
+                GwtStatus::Ok
+            }
+            Err(error) => status(error),
+        }
+    })
+}
+
+#[cfg(feature = "dangerous-insecure")]
+#[unsafe(no_mangle)]
+/// Starts an insecure test-only connection without certificate validation.
+///
+/// # Safety
+///
+/// Pointers follow the requirements of [`gwt_client_connect`]. This symbol is
+/// unavailable unless the explicit `dangerous-insecure` feature is enabled.
+pub unsafe extern "C" fn gwt_client_connect_insecure_for_testing(
+    client: *mut GwtClient,
+    url: *const c_char,
+    out_session: *mut u64,
+) -> GwtStatus {
+    guarded(|| {
+        let Some(client) = (unsafe { client_ref(client) }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let Some(url) = (unsafe { string(url) }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let Some(out_session) = (unsafe { out_session.as_mut() }) else {
+            return GwtStatus::InvalidArgument;
+        };
+        let options = ConnectOptions {
+            certificate_mode: CertificateMode::Insecure,
             ..ConnectOptions::default()
         };
         match client.client.connect(url, options) {
@@ -477,6 +564,7 @@ fn into_ffi_event(event: Event) -> GwtEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CString;
 
     #[test]
     fn header_abi_version_matches_rust() {
@@ -501,5 +589,26 @@ mod tests {
             assert!(!client.is_null());
             unsafe { gwt_client_destroy(client) };
         }
+    }
+
+    #[test]
+    fn invalid_custom_ca_pem_is_rejected() {
+        let client = gwt_client_create(8);
+        let url = CString::new("https://127.0.0.1:4433/echo").unwrap();
+        let invalid_pem = b"not a PEM certificate";
+        let mut session = 0;
+
+        let result = unsafe {
+            gwt_client_connect_custom_ca_pem(
+                client,
+                url.as_ptr(),
+                invalid_pem.as_ptr(),
+                invalid_pem.len(),
+                &mut session,
+            )
+        };
+
+        assert_eq!(result as i32, GwtStatus::InvalidArgument as i32);
+        unsafe { gwt_client_destroy(client) };
     }
 }

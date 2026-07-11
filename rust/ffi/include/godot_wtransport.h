@@ -66,6 +66,13 @@ GwtStatus gwt_client_connect(GwtClient *client, const char *url, uint64_t *out_s
 GwtStatus gwt_client_connect_hashes(GwtClient *client, const char *url,
                                     const uint8_t *hashes, size_t hash_count,
                                     uint64_t *out_session);
+GwtStatus gwt_client_connect_custom_ca_pem(GwtClient *client, const char *url,
+                                           const uint8_t *ca_pem, size_t ca_pem_len,
+                                           uint64_t *out_session);
+#ifdef GWT_ENABLE_INSECURE
+GwtStatus gwt_client_connect_insecure_for_testing(GwtClient *client, const char *url,
+                                                   uint64_t *out_session);
+#endif
 GwtStatus gwt_client_send_datagram(GwtClient *client, uint64_t session,
                                    const uint8_t *data, size_t data_len);
 GwtStatus gwt_client_open_bidirectional_stream(GwtClient *client, uint64_t session,

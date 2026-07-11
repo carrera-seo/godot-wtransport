@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license-file = "../../LICENSE"
 repository.workspace = true
+publish = false
 
 [dependencies]
 anyhow.workspace = true

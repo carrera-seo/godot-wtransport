@@ -5,12 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license-file = "../../LICENSE"
 repository.workspace = true
+publish = false
 
 [features]
 default = []
 dangerous-insecure = ["wtransport/dangerous-configuration"]
 
 [dependencies]
+rustls.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 wtransport.workspace = true
