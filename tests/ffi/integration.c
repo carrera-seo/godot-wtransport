@@ -98,6 +98,17 @@ int main(int argc, char **argv) {
     assert(wait_for_event(client, GWT_EVENT_STREAM_DATA, 0, stream_payload,
                           sizeof(stream_payload) - 1));
     assert(gwt_client_close(client, session, 0, NULL, 0) == GWT_STATUS_OK);
+    assert(wait_for_event(client, GWT_EVENT_CLOSED, 0, NULL, 0));
+
+    for (int iteration = 0; iteration < 20; ++iteration) {
+        uint64_t repeated_session = 0;
+        assert(gwt_client_connect_hashes(client, argv[1], hash, 1, &repeated_session) ==
+               GWT_STATUS_OK);
+        assert(wait_for_event(client, GWT_EVENT_CONNECTED, 0, NULL, 0));
+        assert(gwt_client_close(client, repeated_session, 0, NULL, 0) == GWT_STATUS_OK);
+        assert(wait_for_event(client, GWT_EVENT_CLOSED, 0, NULL, 0));
+    }
+
     gwt_client_destroy(client);
     return 0;
 }
