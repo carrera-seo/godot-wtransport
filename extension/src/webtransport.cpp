@@ -186,13 +186,20 @@ void WebTransportClient::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_connection_stats"), &WebTransportClient::get_connection_stats);
     ClassDB::bind_method(D_METHOD("set_trace_enabled", "enabled"), &WebTransportClient::set_trace_enabled);
     ClassDB::bind_method(D_METHOD("is_trace_enabled"), &WebTransportClient::is_trace_enabled);
+    ClassDB::bind_method(D_METHOD("set_close_on_application_pause", "enabled"), &WebTransportClient::set_close_on_application_pause);
+    ClassDB::bind_method(D_METHOD("is_close_on_application_pause"), &WebTransportClient::is_close_on_application_pause);
+    ClassDB::bind_method(D_METHOD("close_all_sessions", "code", "reason"), &WebTransportClient::close_all_sessions, DEFVAL(0), DEFVAL(String()));
+    ClassDB::bind_method(D_METHOD("handle_network_change"), &WebTransportClient::handle_network_change);
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "trace_enabled"), "set_trace_enabled", "is_trace_enabled");
+    ADD_PROPERTY(PropertyInfo(Variant::BOOL, "close_on_application_pause"), "set_close_on_application_pause", "is_close_on_application_pause");
 #ifdef GWT_ENABLE_INSECURE
     ClassDB::bind_method(D_METHOD("connect_insecure_for_testing", "url"), &WebTransportClient::connect_insecure_for_testing);
 #endif
     ADD_SIGNAL(MethodInfo("connection_succeeded", PropertyInfo(Variant::OBJECT, "session", PROPERTY_HINT_RESOURCE_TYPE, "WebTransportSession")));
     ADD_SIGNAL(MethodInfo("connection_failed", PropertyInfo(Variant::DICTIONARY, "error")));
     ADD_SIGNAL(MethodInfo("trace_event", PropertyInfo(Variant::DICTIONARY, "event")));
+    ADD_SIGNAL(MethodInfo("sessions_closed_for_lifecycle", PropertyInfo(Variant::STRING, "reason"), PropertyInfo(Variant::INT, "count")));
+    ADD_SIGNAL(MethodInfo("application_resumed"));
 }
 
 PackedByteArray WebTransportClient::copy_bytes(const uint8_t *p_data, size_t p_size) {
@@ -324,6 +331,15 @@ void WebTransportClient::_process(double p_delta) {
     }
 }
 
+void WebTransportClient::_notification(int p_what) {
+    if (p_what == NOTIFICATION_APPLICATION_PAUSED && close_on_application_pause) {
+        int64_t count = close_all_sessions(0, "application paused");
+        emit_signal("sessions_closed_for_lifecycle", "application_paused", count);
+    } else if (p_what == NOTIFICATION_APPLICATION_RESUMED) {
+        emit_signal("application_resumed");
+    }
+}
+
 int64_t WebTransportClient::connect_to_url(const String &p_url, const Ref<WebTransportTlsOptions> &p_tls_options) {
     ERR_FAIL_NULL_V(client, 0);
     CharString url = p_url.utf8();
@@ -414,6 +430,29 @@ void WebTransportClient::set_trace_enabled(bool p_enabled) {
 
 bool WebTransportClient::is_trace_enabled() const {
     return trace_enabled;
+}
+
+void WebTransportClient::set_close_on_application_pause(bool p_enabled) {
+    close_on_application_pause = p_enabled;
+}
+
+bool WebTransportClient::is_close_on_application_pause() const {
+    return close_on_application_pause;
+}
+
+int64_t WebTransportClient::close_all_sessions(int64_t p_code, const String &p_reason) {
+    ERR_FAIL_COND_V_MSG(p_code < 0 || p_code > UINT32_MAX, 0, "Close code must fit in an unsigned 32-bit integer.");
+    ERR_FAIL_NULL_V(client, 0);
+    CharString reason = p_reason.utf8();
+    uint64_t closed_count = 0;
+    ERR_FAIL_COND_V_MSG(gwt_client_close_all(client, static_cast<uint32_t>(p_code), reinterpret_cast<const uint8_t *>(reason.get_data()), reason.length(), &closed_count) != GWT_STATUS_OK, 0, "Failed to close active sessions.");
+    return static_cast<int64_t>(closed_count);
+}
+
+int64_t WebTransportClient::handle_network_change() {
+    int64_t count = close_all_sessions(0, "network changed; reconnect required");
+    emit_signal("sessions_closed_for_lifecycle", "network_changed", count);
+    return count;
 }
 
 Dictionary WebTransportClient::get_connection_stats() const {

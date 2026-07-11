@@ -100,6 +100,9 @@ GwtStatus gwt_client_write_stream(GwtClient *client, uint64_t stream,
 GwtStatus gwt_client_finish_stream(GwtClient *client, uint64_t stream);
 GwtStatus gwt_client_close(GwtClient *client, uint64_t session, uint32_t code,
                            const uint8_t *reason, size_t reason_len);
+GwtStatus gwt_client_close_all(GwtClient *client, uint32_t code,
+                               const uint8_t *reason, size_t reason_len,
+                               uint64_t *out_closed_count);
 GwtStatus gwt_client_drain(GwtClient *client, uint64_t session, uint64_t timeout_ms,
                            uint32_t code, const uint8_t *reason, size_t reason_len);
 GwtStatus gwt_client_session_diagnostics(GwtClient *client, uint64_t session,

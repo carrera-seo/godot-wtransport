@@ -14,9 +14,10 @@ option(GWT_BUILD_EXTENSION "Build the Godot GDExtension" ON)
 option(GWT_ENABLE_INSECURE_TESTING "Expose certificate bypass in debug builds" OFF)
 set(GWT_GODOT_CPP_SOURCE "" CACHE PATH "Use an existing godot-cpp checkout")
 set(GWT_RUST_TARGET "" CACHE STRING "Optional Rust target triple")
+set(GWT_RUST_LINKER_ENV "" CACHE STRING "Optional Cargo target linker environment assignment")
 set(GWT_OUTPUT_ARCH "" CACHE STRING "Architecture tag used in artifact filenames")
 set(GWT_MACOS_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum supported macOS version")
-if(APPLE)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "${GWT_MACOS_DEPLOYMENT_TARGET}" CACHE STRING "Minimum macOS version" FORCE)
 endif()
 
@@ -66,7 +67,13 @@ if(GWT_BUILD_EXTENSION)
         set(GWT_RUST_FFI_LIBRARY "${GWT_RUST_OUTPUT_DIR}/libgodot_wtransport_ffi.a")
     endif()
 
-    if(APPLE)
+    if(GWT_RUST_LINKER_ENV)
+        set(GWT_RUST_BUILD_COMMAND ${CMAKE_COMMAND} -E env
+            ${GWT_RUST_LINKER_ENV} cargo ${GWT_RUST_BUILD_ARGS})
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(GWT_RUST_BUILD_COMMAND ${CMAKE_COMMAND} -E env
+            IPHONEOS_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET} cargo ${GWT_RUST_BUILD_ARGS})
+    elseif(APPLE)
         set(GWT_RUST_BUILD_COMMAND ${CMAKE_COMMAND} -E env
             MACOSX_DEPLOYMENT_TARGET=${GWT_MACOS_DEPLOYMENT_TARGET} cargo ${GWT_RUST_BUILD_ARGS})
     else()
@@ -78,7 +85,11 @@ if(GWT_BUILD_EXTENSION)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         BYPRODUCTS "${GWT_RUST_FFI_LIBRARY}"
     )
-    add_library(godot_wtransport SHARED extension/src/register_types.cpp extension/src/webtransport.cpp)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        add_library(godot_wtransport STATIC extension/src/register_types.cpp extension/src/webtransport.cpp)
+    else()
+        add_library(godot_wtransport SHARED extension/src/register_types.cpp extension/src/webtransport.cpp)
+    endif()
     add_dependencies(godot_wtransport gwt_rust_ffi)
     target_include_directories(godot_wtransport PRIVATE extension/include rust/ffi/include)
     if(MSVC)
@@ -97,7 +108,15 @@ if(GWT_BUILD_EXTENSION)
         target_compile_definitions(godot_wtransport PRIVATE GWT_ENABLE_INSECURE=1)
     endif()
     target_link_libraries(godot_wtransport PRIVATE godot-cpp "${GWT_RUST_FFI_LIBRARY}")
-    if(APPLE)
+    if(ANDROID)
+        target_link_libraries(godot_wtransport PRIVATE android log dl m)
+        set(GWT_PLATFORM_NAME "android")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        target_link_libraries(godot_wtransport PRIVATE
+            "-framework Security" "-framework CoreFoundation" "-framework SystemConfiguration"
+        )
+        set(GWT_PLATFORM_NAME "ios")
+    elseif(APPLE)
         target_link_libraries(godot_wtransport PRIVATE
             "-framework Security" "-framework CoreFoundation" "-framework SystemConfiguration" resolv
         )
@@ -129,6 +148,7 @@ if(GWT_BUILD_EXTENSION)
     set_target_properties(godot_wtransport PROPERTIES
         OUTPUT_NAME "godot_wtransport.${GWT_PLATFORM_NAME}.${GWT_BUILD_FLAVOR}.${GWT_OUTPUT_ARCH}"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/mobile/ios/lib"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"

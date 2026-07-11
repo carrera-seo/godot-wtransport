@@ -73,6 +73,9 @@ TLS configuration and certificate troubleshooting are documented in
 [docs/tls.md](docs/tls.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
 Runtime statistics, graceful draining, and safe tracing are documented in
 [docs/operations.md](docs/operations.md).
+Android builds, mobile lifecycle policy, deferred iOS preparation, and store
+privacy disclosures are documented in [docs/mobile.md](docs/mobile.md) and
+[docs/store-privacy.md](docs/store-privacy.md).
 Artifact layout and Asset Library requirements are documented in
 [docs/distribution.md](docs/distribution.md).
 

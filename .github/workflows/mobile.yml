@@ -1,0 +1,48 @@
+name: Android artifact
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  android-arm64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
+          targets: aarch64-linux-android
+      - name: Install build tools and NDK r29
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          sdkmanager --install "ndk;29.0.14206865"
+      - name: Check out pinned godot-cpp
+        run: git clone --depth 1 https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp fetch --depth 1 origin e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77 && git -C godot-cpp checkout --detach e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77
+      - name: Build Android arm64 extension
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+          GWT_GODOT_CPP_SOURCE: ${{ github.workspace }}/godot-cpp
+        run: ./scripts/build_android.sh
+      - name: Verify Android ELF artifacts
+        run: |
+          for library in demo/addons/godot_wtransport/bin/libgodot_wtransport.android.*.arm64.so; do
+            file "$library" | grep -q 'ARM aarch64'
+            readelf -h "$library" | grep -q 'AArch64'
+            if nm -D "$library" | grep -q gwt_client_connect_insecure_for_testing; then
+              echo "Insecure TLS symbol found in Android artifact" >&2
+              exit 1
+            fi
+          done
+      - name: Package Android addon
+        run: ./scripts/package_release.sh 0.1.0-dev-android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-wtransport-android-arm64
+          path: dist/*android*
+          if-no-files-found: error

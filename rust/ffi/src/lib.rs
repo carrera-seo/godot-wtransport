@@ -472,6 +472,32 @@ pub unsafe extern "C" fn gwt_client_close(
 }
 
 #[unsafe(no_mangle)]
+/// Closes all active sessions for a lifecycle transition.
+///
+/// # Safety
+///
+/// `reason` must reference `reason_len` bytes and `out_closed_count` must be writable.
+pub unsafe extern "C" fn gwt_client_close_all(
+    client: *mut GwtClient,
+    code: u32,
+    reason: *const u8,
+    reason_len: usize,
+    out_closed_count: *mut u64,
+) -> GwtStatus {
+    guarded(|| {
+        let (Some(client), Some(reason), Some(out_closed_count)) = (
+            unsafe { client_ref(client) },
+            unsafe { bytes(reason, reason_len) },
+            unsafe { out_closed_count.as_mut() },
+        ) else {
+            return GwtStatus::InvalidArgument;
+        };
+        *out_closed_count = client.client.close_all(code, reason);
+        GwtStatus::Ok
+    })
+}
+
+#[unsafe(no_mangle)]
 /// Starts graceful draining and closes the session after the deadline.
 ///
 /// # Safety

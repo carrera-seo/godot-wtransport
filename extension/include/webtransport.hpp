@@ -89,6 +89,7 @@ public:
     WebTransportClient();
     ~WebTransportClient() override;
     void _process(double p_delta) override;
+    void _notification(int p_what);
     int64_t connect_to_url(const String &p_url, const Ref<WebTransportTlsOptions> &p_tls_options = Ref<WebTransportTlsOptions>());
 #ifdef GWT_ENABLE_INSECURE
     int64_t connect_insecure_for_testing(const String &p_url);
@@ -103,10 +104,15 @@ public:
     Dictionary get_session_diagnostics(uint64_t p_session) const;
     void set_trace_enabled(bool p_enabled);
     bool is_trace_enabled() const;
+    void set_close_on_application_pause(bool p_enabled);
+    bool is_close_on_application_pause() const;
+    int64_t close_all_sessions(int64_t p_code = 0, const String &p_reason = String());
+    int64_t handle_network_change();
     Dictionary get_connection_stats() const;
 
 private:
     bool trace_enabled = false;
+    bool close_on_application_pause = true;
 };
 
 } // namespace godot

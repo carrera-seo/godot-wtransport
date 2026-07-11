@@ -542,6 +542,19 @@ impl Client {
         Ok(())
     }
 
+    pub fn close_all(&self, code: u32, reason: &[u8]) -> u64 {
+        let Ok(sessions) = self.shared.sessions.lock() else {
+            return 0;
+        };
+        let count = sessions.len() as u64;
+        for (handle, connection) in sessions.iter() {
+            connection.close(VarInt::from_u32(code), reason);
+            self.shared
+                .trace("lifecycle_close_requested", *handle, 0, code as u64);
+        }
+        count
+    }
+
     pub fn drain(
         &self,
         session: SessionHandle,

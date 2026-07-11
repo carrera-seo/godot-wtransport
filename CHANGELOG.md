@@ -17,3 +17,5 @@ All notable changes to this project are documented in this file.
   and Windows x86_64, with separate symbols and development servers.
 - Client statistics, session path diagnostics, graceful drain deadlines, and
   bounded metadata-only trace events.
+- Android arm64 build automation, deterministic mobile lifecycle/network-change
+  policy, and deferred iOS static-linking and store-privacy preparation.
