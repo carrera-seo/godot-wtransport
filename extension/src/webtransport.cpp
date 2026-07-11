@@ -54,6 +54,7 @@ void WebTransportStream::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_writable"), &WebTransportStream::is_writable);
     ClassDB::bind_method(D_METHOD("write", "data"), &WebTransportStream::write);
     ClassDB::bind_method(D_METHOD("finish"), &WebTransportStream::finish);
+    ADD_SIGNAL(MethodInfo("opened"));
     ADD_SIGNAL(MethodInfo("data_received", PropertyInfo(Variant::PACKED_BYTE_ARRAY, "data")));
     ADD_SIGNAL(MethodInfo("finished"));
     ADD_SIGNAL(MethodInfo("reset", PropertyInfo(Variant::INT, "error_code")));
@@ -274,7 +275,7 @@ void WebTransportClient::dispatch_event(GwtEvent &p_event) {
             }
             break;
         case GWT_EVENT_STREAM_OPENED:
-            stream_for(p_event.stream, true);
+            stream_for(p_event.stream, true)->emit_signal("opened");
             break;
         case GWT_EVENT_INCOMING_BIDIRECTIONAL_STREAM:
             session->emit_signal("incoming_bidirectional_stream", stream_for(p_event.stream, true));

@@ -36,6 +36,10 @@ writes: a transport error can occur after a partial write and the call does not
 reserve flow-control credit atomically. Applications must add framing when
 message boundaries matter.
 
+Native outgoing stream creation is asynchronous. Connect the stream's
+`opened` signal before calling `write()` or `finish()`. Incoming stream signals
+only deliver streams that are already open.
+
 ## WebTransportTlsOptions
 
 By default the client validates against native operating-system roots. Add one

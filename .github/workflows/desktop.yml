@@ -97,6 +97,11 @@ jobs:
           fi
       - name: Smoke test release extension
         run: ./scripts/smoke_release.sh "${{ steps.godot.outputs.path }}" "${{ matrix.platform }}"
+      - name: Smoke test native streams
+        run: |
+          server="$PWD/target/${{ runner.os == 'macOS' && 'aarch64-apple-darwin' || runner.os == 'Windows' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu' }}/release/godot-wtransport-dev-server"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then server="$server.exe"; fi
+          ./scripts/smoke_streams.sh "${{ steps.godot.outputs.path }}" "$server"
       - name: Split symbols and package
         run: ./scripts/package_desktop_artifacts.sh "${{ matrix.platform }}" 0.1.0-dev
       - uses: actions/upload-artifact@v4
