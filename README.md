@@ -4,8 +4,24 @@
 WebTransport over HTTP/3. The transport core is implemented in Rust and exposed
 through a small, panic-safe C ABI to an official `godot-cpp` adapter.
 
-The project is under active development. The Rust core and C ABI are available;
-the Godot-facing API is introduced in Phase 2.
+Prebuilt addon archives target macOS universal, Linux x86_64, and Windows
+x86_64. Building from source requires the tools below.
+
+## Quick start
+
+1. Extract the release archive into a Godot project so that
+   `addons/godot_wtransport/godot-wtransport.gdextension` exists.
+2. Download the development server artifact for the host operating system.
+3. Start the local echo server:
+
+```shell
+./godot-wtransport-dev-server --listen 127.0.0.1:4433
+```
+
+4. Copy the printed SHA-256 certificate hash into
+   `WebTransportTlsOptions.server_certificate_hashes`, then connect to
+   `https://127.0.0.1:4433/echo`. The complete Godot flow is in
+   [demo/scripts/main.gd](demo/scripts/main.gd).
 
 ## Development requirements
 
@@ -32,6 +48,15 @@ cmake -S . -B build -DGWT_BUILD_EXTENSION=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ```
 
+Build all native artifacts for the current desktop platform and create the
+addon archive with SHA-256 checksums:
+
+```shell
+./scripts/build_desktop.sh
+cargo build --release -p godot-wtransport-dev-server
+./scripts/package_release.sh 0.1.0
+```
+
 For offline or iterative work, pass an existing stable checkout with
 `-DGWT_GODOT_CPP_SOURCE=/path/to/godot-cpp`.
 
@@ -46,6 +71,8 @@ Run the headless load test with an explicit writable log path:
 
 TLS configuration and certificate troubleshooting are documented in
 [docs/tls.md](docs/tls.md) and [docs/troubleshooting.md](docs/troubleshooting.md).
+Artifact layout and Asset Library requirements are documented in
+[docs/distribution.md](docs/distribution.md).
 
 ## License
 

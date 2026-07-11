@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
 project(godot_wtransport LANGUAGES C CXX)
 
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -9,11 +13,22 @@ option(GWT_BUILD_FFI_HARNESS "Build the C ABI lifecycle harness" ON)
 option(GWT_BUILD_EXTENSION "Build the Godot GDExtension" ON)
 option(GWT_ENABLE_INSECURE_TESTING "Expose certificate bypass in debug builds" OFF)
 set(GWT_GODOT_CPP_SOURCE "" CACHE PATH "Use an existing godot-cpp checkout")
+set(GWT_RUST_TARGET "" CACHE STRING "Optional Rust target triple")
+set(GWT_OUTPUT_ARCH "" CACHE STRING "Architecture tag used in artifact filenames")
+set(GWT_MACOS_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum supported macOS version")
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${GWT_MACOS_DEPLOYMENT_TARGET}" CACHE STRING "Minimum macOS version" FORCE)
+endif()
 
 if(GWT_BUILD_EXTENSION)
     include(FetchContent)
     set(GODOTCPP_BUILD_PROFILE "${CMAKE_SOURCE_DIR}/cmake/godot-cpp-profile.json" CACHE PATH "godot-cpp build profile" FORCE)
     set(GODOTCPP_USE_HOT_RELOAD ON CACHE BOOL "Enable editor hot reload" FORCE)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(GODOTCPP_TARGET "template_debug" CACHE STRING "godot-cpp target" FORCE)
+    else()
+        set(GODOTCPP_TARGET "template_release" CACHE STRING "godot-cpp target" FORCE)
+    endif()
     if(GWT_GODOT_CPP_SOURCE)
         add_subdirectory("${GWT_GODOT_CPP_SOURCE}" "${CMAKE_BINARY_DIR}/godot-cpp")
     else()
@@ -39,42 +54,87 @@ if(GWT_BUILD_EXTENSION)
         endif()
         list(APPEND GWT_RUST_BUILD_ARGS --features godot-wtransport-ffi/dangerous-insecure)
     endif()
-    set(GWT_RUST_FFI_LIBRARY "${CMAKE_SOURCE_DIR}/target/${GWT_RUST_PROFILE_DIR}/libgodot_wtransport_ffi.a")
+    if(GWT_RUST_TARGET)
+        list(APPEND GWT_RUST_BUILD_ARGS --target ${GWT_RUST_TARGET})
+        set(GWT_RUST_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/target/${GWT_RUST_TARGET}/${GWT_RUST_PROFILE_DIR}")
+    else()
+        set(GWT_RUST_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/target/${GWT_RUST_PROFILE_DIR}")
+    endif()
+    if(WIN32)
+        set(GWT_RUST_FFI_LIBRARY "${GWT_RUST_OUTPUT_DIR}/godot_wtransport_ffi.lib")
+    else()
+        set(GWT_RUST_FFI_LIBRARY "${GWT_RUST_OUTPUT_DIR}/libgodot_wtransport_ffi.a")
+    endif()
 
+    if(APPLE)
+        set(GWT_RUST_BUILD_COMMAND ${CMAKE_COMMAND} -E env
+            MACOSX_DEPLOYMENT_TARGET=${GWT_MACOS_DEPLOYMENT_TARGET} cargo ${GWT_RUST_BUILD_ARGS})
+    else()
+        set(GWT_RUST_BUILD_COMMAND cargo ${GWT_RUST_BUILD_ARGS})
+    endif()
     add_custom_target(
         gwt_rust_ffi
-        COMMAND cargo ${GWT_RUST_BUILD_ARGS}
+        COMMAND ${GWT_RUST_BUILD_COMMAND}
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         BYPRODUCTS "${GWT_RUST_FFI_LIBRARY}"
     )
     add_library(godot_wtransport SHARED extension/src/register_types.cpp extension/src/webtransport.cpp)
     add_dependencies(godot_wtransport gwt_rust_ffi)
     target_include_directories(godot_wtransport PRIVATE extension/include rust/ffi/include)
-    target_compile_options(godot_wtransport PRIVATE
-        -Wall -Wextra -Werror
-        -Wno-unused-parameter -Wno-gnu-anonymous-struct -Wno-nested-anon-types
-    )
+    if(MSVC)
+        target_compile_options(godot_wtransport PRIVATE /W4 /WX /wd4100)
+    else()
+        target_compile_options(godot_wtransport PRIVATE
+            -Wall -Wextra -Werror
+            -Wno-unused-parameter -Wno-gnu-anonymous-struct -Wno-nested-anon-types
+        )
+    endif()
     if(GWT_ENABLE_INSECURE_TESTING)
         target_compile_definitions(godot_wtransport PRIVATE GWT_ENABLE_INSECURE=1)
     endif()
-    target_link_libraries(
-        godot_wtransport PRIVATE godot-cpp
-        "${GWT_RUST_FFI_LIBRARY}"
-        "-framework Security" "-framework CoreFoundation" "-framework SystemConfiguration" resolv
-    )
+    target_link_libraries(godot_wtransport PRIVATE godot-cpp "${GWT_RUST_FFI_LIBRARY}")
+    if(APPLE)
+        target_link_libraries(godot_wtransport PRIVATE
+            "-framework Security" "-framework CoreFoundation" "-framework SystemConfiguration" resolv
+        )
+        set(GWT_PLATFORM_NAME "macos")
+    elseif(WIN32)
+        target_link_libraries(godot_wtransport PRIVATE
+            ws2_32 bcrypt crypt32 ncrypt secur32 ntdll userenv
+        )
+        set(GWT_PLATFORM_NAME "windows")
+    elseif(UNIX)
+        target_link_libraries(godot_wtransport PRIVATE pthread dl m)
+        set(GWT_PLATFORM_NAME "linux")
+    else()
+        message(FATAL_ERROR "Unsupported desktop platform")
+    endif()
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         set(GWT_BUILD_FLAVOR "debug")
     else()
         set(GWT_BUILD_FLAVOR "release")
     endif()
+    if(NOT GWT_OUTPUT_ARCH)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+            set(GWT_OUTPUT_ARCH "arm64")
+        else()
+            set(GWT_OUTPUT_ARCH "x86_64")
+        endif()
+    endif()
 
     set_target_properties(godot_wtransport PROPERTIES
-        OUTPUT_NAME "godot_wtransport.macos.${GWT_BUILD_FLAVOR}.arm64"
+        OUTPUT_NAME "godot_wtransport.${GWT_PLATFORM_NAME}.${GWT_BUILD_FLAVOR}.${GWT_OUTPUT_ARCH}"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/demo/addons/godot_wtransport/bin"
     )
 endif()
 
 if(GWT_BUILD_FFI_HARNESS)
+    if(NOT APPLE)
+        message(FATAL_ERROR "The Phase 1 FFI harness currently supports macOS only")
+    endif()
     add_executable(gwt_ffi_lifecycle tests/ffi/lifecycle.c)
     add_executable(gwt_ffi_integration tests/ffi/integration.c)
     target_include_directories(gwt_ffi_lifecycle PRIVATE rust/ffi/include)

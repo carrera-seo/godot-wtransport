@@ -8,3 +8,4 @@ addons/godot_wtransport/bin/
 demo/.godot/
 demo/addons/godot_wtransport/bin/
 build-*/
+dist/

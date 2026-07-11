@@ -1,0 +1,93 @@
+name: Desktop artifacts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos
+            godot_asset: Godot_v4.6.3-stable_macos.universal.zip
+          - os: ubuntu-24.04
+            platform: linux
+            godot_asset: Godot_v4.6.3-stable_linux.x86_64.zip
+          - os: windows-2025
+            platform: windows
+            godot_asset: Godot_v4.6.3-stable_win64.exe.zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu,x86_64-pc-windows-msvc
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libfontconfig1 libx11-6 libxcursor1 libxinerama1 libxrandr2 libxi6 libgl1
+      - name: Check out pinned godot-cpp
+        run: git clone --depth 1 https://github.com/godotengine/godot-cpp.git godot-cpp && git -C godot-cpp fetch --depth 1 origin e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77 && git -C godot-cpp checkout --detach e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77
+      - name: Build desktop extension
+        env:
+          GWT_GODOT_CPP_SOURCE: ${{ github.workspace }}/godot-cpp
+        run: ./scripts/build_desktop.sh
+      - name: Build development server
+        run: cargo build --release --target ${{ runner.os == 'macOS' && 'aarch64-apple-darwin' || runner.os == 'Windows' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu' }} -p godot-wtransport-dev-server
+      - name: Download Godot
+        run: curl -L --fail --retry 3 "https://github.com/godotengine/godot/releases/download/4.6.3-stable/${{ matrix.godot_asset }}" -o godot.zip && unzip -q godot.zip -d godot-bin
+      - name: Locate Godot
+        id: godot
+        run: |
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            echo "path=$PWD/godot-bin/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "path=$(find "$PWD/godot-bin" -name 'Godot*.exe' -type f | head -1)" >> "$GITHUB_OUTPUT"
+          else
+            path="$(find "$PWD/godot-bin" -name 'Godot*' -type f | head -1)"
+            chmod +x "$path"
+            echo "path=$path" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Smoke test release extension
+        run: ./scripts/smoke_release.sh "${{ steps.godot.outputs.path }}" "${{ matrix.platform }}"
+      - name: Split symbols and package
+        run: ./scripts/package_desktop_artifacts.sh "${{ matrix.platform }}" 0.1.0-dev
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-wtransport-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  addon:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: godot-wtransport-*
+          path: platform-artifacts
+      - name: Merge platform addons
+        run: |
+          mkdir -p combined
+          for archive in platform-artifacts/*/godot-wtransport-0.1.0-dev.zip; do
+            unzip -q -o "$archive" -d combined
+          done
+          find combined -exec touch -t 198001010000 {} +
+          (cd combined && zip -X -r ../godot-wtransport-0.1.0-dev-all-desktop.zip addons)
+          shasum -a 256 godot-wtransport-0.1.0-dev-all-desktop.zip > godot-wtransport-0.1.0-dev-all-desktop.zip.sha256
+          unzip -t godot-wtransport-0.1.0-dev-all-desktop.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-wtransport-addon-all-desktop
+          path: godot-wtransport-0.1.0-dev-all-desktop.zip*
+          if-no-files-found: error

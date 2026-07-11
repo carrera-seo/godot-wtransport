@@ -13,3 +13,5 @@ All notable changes to this project are documented in this file.
 - Godot headless and local-server round-trip demo.
 - Native-root, custom-CA, and certificate-hash TLS policies.
 - Debug-only certificate bypass guard and certificate failure matrix.
+- Reproducible desktop builds and packages for macOS universal, Linux x86_64,
+  and Windows x86_64, with separate symbols and development servers.

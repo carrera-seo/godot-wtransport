@@ -6,8 +6,8 @@ reloadable = true
 
 [libraries]
 
-macos.debug = "res://addons/godot_wtransport/bin/libgodot_wtransport.macos.debug.arm64.dylib"
-macos.release = "res://addons/godot_wtransport/bin/libgodot_wtransport.macos.release.arm64.dylib"
+macos.debug = "res://addons/godot_wtransport/bin/libgodot_wtransport.macos.debug.universal.dylib"
+macos.release = "res://addons/godot_wtransport/bin/libgodot_wtransport.macos.release.universal.dylib"
 linux.debug.x86_64 = "res://addons/godot_wtransport/bin/libgodot_wtransport.linux.debug.x86_64.so"
 linux.release.x86_64 = "res://addons/godot_wtransport/bin/libgodot_wtransport.linux.release.x86_64.so"
 windows.debug.x86_64 = "res://addons/godot_wtransport/bin/godot_wtransport.windows.debug.x86_64.dll"
