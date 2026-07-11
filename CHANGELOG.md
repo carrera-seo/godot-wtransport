@@ -22,3 +22,9 @@ All notable changes to this project are documented in this file.
 - Optional Godot Web JavaScriptBridge backend for datagrams and streams.
 - Web export smoke CI and browser/native API difference documentation.
 - Browser-compatible generated development-certificate validity.
+
+### Changed
+
+- Validate native, Android, and Web artifacts against Godot 4.7 stable while
+  retaining the stable godot-cpp 4.5 API baseline for forward compatibility.
+- Serialize the native stream smoke paths to remove a concurrent-open test race.

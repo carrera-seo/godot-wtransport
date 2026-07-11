@@ -27,10 +27,6 @@ func _on_connected(connected_session: WebTransportSession) -> void:
     bidi_stream.data_received.connect(_on_bidi_data)
     bidi_stream.opened.connect(_on_bidi_opened)
 
-    uni_stream = session.create_unidirectional_stream()
-    assert(uni_stream != null)
-    uni_stream.opened.connect(_on_uni_opened)
-
 func _on_bidi_opened() -> void:
     assert(bidi_stream.write("godot-bidi-echo".to_utf8_buffer()) == OK)
     assert(bidi_stream.finish() == OK)
@@ -42,7 +38,9 @@ func _on_uni_opened() -> void:
 func _on_bidi_data(data: PackedByteArray) -> void:
     assert(data.get_string_from_utf8() == "godot-bidi-echo")
     bidi_received = true
-    _finish_if_complete()
+    uni_stream = session.create_unidirectional_stream()
+    assert(uni_stream != null)
+    uni_stream.opened.connect(_on_uni_opened)
 
 func _on_incoming_unidirectional_stream(stream: WebTransportStream) -> void:
     incoming_uni_stream = stream

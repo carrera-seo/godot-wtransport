@@ -57,7 +57,7 @@ and Godot's stable JavaScriptBridge contract.
 
 ## Validation status
 
-The Godot 4.6.3 Web export compiles and starts in a Chromium-based browser,
+The Godot 4.7 Web export compiles and starts in a Chromium-based browser,
 and capability detection and browser error delivery are exercised locally.
 Chromium-based browser validation covers an HTTP/3 connection and echoed
 datagram against the bundled server. The browser used for the 2026-07-11 run
