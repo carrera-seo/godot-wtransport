@@ -56,6 +56,11 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu,x86_64-pc-windows-msvc
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
+      - name: Configure MSVC linker for Cargo
+        if: runner.os == 'Windows'
+        run: |
+          msvc_tools="$(cygpath -u "$VCToolsInstallDir")"
+          echo "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$msvc_tools/bin/Hostx64/x64/link.exe" >> "$GITHUB_ENV"
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libfontconfig1 libx11-6 libxcursor1 libxinerama1 libxrandr2 libxi6 libgl1
