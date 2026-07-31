@@ -27,7 +27,7 @@ for flavor in Debug Release; do
             -DGWT_RUST_TARGET="$rust_target" \
             -DGWT_OUTPUT_ARCH="$arch" \
             -DGWT_MACOS_DEPLOYMENT_TARGET="$deployment_target" \
-            "${cmake_source_args[@]}"
+            ${cmake_source_args[@]+"${cmake_source_args[@]}"}
         cmake --build "$build_dir" --parallel
         slices+=("$root/demo/addons/godot_wtransport/bin/libgodot_wtransport.macos.$flavor_lower.$arch.dylib")
     done

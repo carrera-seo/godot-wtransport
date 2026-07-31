@@ -6,6 +6,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
+use wtransport::error::ConnectionError;
 use wtransport::tls::Sha256Digest;
 use wtransport::{ClientConfig, Connection, Endpoint, VarInt};
 
@@ -883,20 +884,58 @@ async fn send_stream_error(
         .await;
 }
 
-async fn send_closed(shared: &Shared, session: SessionHandle, error: impl std::fmt::Display) {
-    let error = TransportError::from_network(error);
-    shared.trace("session_closed", session, 0, 0);
-    shared
-        .events
-        .send_reliable(Event {
-            kind: EventKind::Closed,
-            session,
-            stream: 0,
-            code: error.code,
-            data: error.message.as_bytes().to_vec(),
-            error: Some(error),
-        })
-        .await;
+async fn send_closed(shared: &Shared, session: SessionHandle, error: ConnectionError) {
+    let event = closed_event(session, error);
+    shared.trace(
+        "session_closed",
+        session,
+        0,
+        u64::try_from(event.code).unwrap_or(0),
+    );
+    shared.events.send_reliable(event).await;
+}
+
+fn closed_event(session: SessionHandle, error: ConnectionError) -> Event {
+    match error {
+        ConnectionError::ApplicationClosed(close) => {
+            application_closed_event(session, close.code().into_inner(), close.reason())
+        }
+        error => {
+            let error = TransportError::from_network(error);
+            Event {
+                kind: EventKind::Closed,
+                session,
+                stream: 0,
+                code: error.code,
+                data: error.message.as_bytes().to_vec(),
+                error: Some(error),
+            }
+        }
+    }
+}
+
+fn application_closed_event(session: SessionHandle, code: u64, reason: &[u8]) -> Event {
+    let code = i64::try_from(code).unwrap_or(i64::MAX);
+    let message = String::from_utf8_lossy(reason).into_owned();
+    let error = TransportError {
+        category: ErrorCategory::Session,
+        code,
+        message,
+        retryable: false,
+        transport_error_code: None,
+        http3_error_code: None,
+        stream_error_code: None,
+        tls_alert: None,
+        os_error: None,
+    };
+    Event {
+        kind: EventKind::Closed,
+        session,
+        stream: 0,
+        code,
+        data: error.message.as_bytes().to_vec(),
+        error: Some(error),
+    }
 }
 
 #[cfg(test)]
@@ -930,6 +969,21 @@ mod tests {
             let client = Client::new(2).unwrap();
             assert_eq!(client.stats(), ClientStats::default());
         }
+    }
+
+    #[test]
+    fn application_close_preserves_code_and_reason() {
+        let event = application_closed_event(7, 4406, b"unsupported protocol version");
+
+        assert_eq!(event.kind, EventKind::Closed);
+        assert_eq!(event.session, 7);
+        assert_eq!(event.code, 4406);
+        assert_eq!(event.data, b"unsupported protocol version");
+        let error = event.error.expect("close metadata");
+        assert_eq!(error.category, ErrorCategory::Session);
+        assert_eq!(error.code, 4406);
+        assert_eq!(error.message, "unsupported protocol version");
+        assert!(!error.retryable);
     }
 
     #[tokio::test]

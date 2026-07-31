@@ -48,6 +48,6 @@ for flavor in Debug Release; do
         -DGWT_BUILD_FFI_HARNESS=OFF \
         -DGWT_RUST_TARGET="$rust_target" \
         -DGWT_OUTPUT_ARCH=x86_64 \
-        "${cmake_source_args[@]}"
+        ${cmake_source_args[@]+"${cmake_source_args[@]}"}
     cmake --build "$build_dir" --config "$flavor" --parallel
 done
