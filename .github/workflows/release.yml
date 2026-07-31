@@ -57,7 +57,7 @@ jobs:
           ./scripts/package_desktop_artifacts.sh "${{ matrix.platform }}" "$package_version"
           mkdir -p release-assets
           cp "dist/godot-wtransport-$package_version.zip"* release-assets/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-${{ matrix.asset }}
           path: release-assets/*
@@ -92,7 +92,7 @@ jobs:
           ./scripts/package_release.sh "$package_version"
           mkdir -p release-assets
           cp "dist/godot-wtransport-$package_version.zip"* release-assets/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-android-arm64
           path: release-assets/*
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: release-*
           path: release-assets

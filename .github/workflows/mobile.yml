@@ -43,7 +43,7 @@ jobs:
           done
       - name: Package Android addon
         run: ./scripts/package_release.sh 0.1.0-dev-android
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: godot-wtransport-android-arm64
           path: dist/*android*

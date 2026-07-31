@@ -24,7 +24,7 @@ jobs:
           chmod +x godot-bin/Godot_v4.7-stable_linux.x86_64
       - name: Smoke test Web export
         run: ./scripts/smoke_web_export.sh "$PWD/godot-bin/Godot_v4.7-stable_linux.x86_64"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: godot-wtransport-web-demo
           path: dist/web
@@ -113,7 +113,7 @@ jobs:
           ./scripts/smoke_streams.sh "${{ steps.godot.outputs.path }}" "$server"
       - name: Split symbols and package
         run: ./scripts/package_desktop_artifacts.sh "${{ matrix.platform }}" 0.1.0-dev
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: godot-wtransport-${{ matrix.platform }}
           path: dist/*
@@ -123,7 +123,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: godot-wtransport-*
           path: platform-artifacts
@@ -137,7 +137,7 @@ jobs:
           (cd combined && zip -X -r ../godot-wtransport-0.1.0-dev-all-desktop.zip addons)
           shasum -a 256 godot-wtransport-0.1.0-dev-all-desktop.zip > godot-wtransport-0.1.0-dev-all-desktop.zip.sha256
           unzip -t godot-wtransport-0.1.0-dev-all-desktop.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: godot-wtransport-addon-all-desktop
           path: godot-wtransport-0.1.0-dev-all-desktop.zip*
